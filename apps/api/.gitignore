@@ -1,0 +1,9 @@
+node_modules
+
+# Eviroment
+.env
+.env.*
+!.env.example
+
+# Prisma generated client
+/src/generated/prisma

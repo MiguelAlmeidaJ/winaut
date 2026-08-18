@@ -1,0 +1,217 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum AgentStatus {
+  ONLINE
+  OFFLINE
+  DISABLED
+}
+
+enum WinThorHostingType {
+  ON_PREMISE
+  TOTVS_CLOUD
+  OTHER
+}
+
+enum WinThorExecutionMode {
+  LOCAL_WINDOWS
+  GO_GLOBAL
+  RDP
+  CITRIX
+  API
+}
+
+enum AutomationRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum AutomationStepStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+model Company {
+  id        String   @id @default(uuid()) @db.Char(36)
+  name      String   @db.VarChar(150)
+  document  String?  @db.VarChar(30)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  winthorInstances WinThorInstance[]
+
+  @@index([active, name])
+  @@map("companies")
+}
+
+model WinThorInstance {
+  id            String               @id @default(uuid()) @db.Char(36)
+  companyId     String               @map("company_id") @db.Char(36)
+  name          String               @db.VarChar(150)
+  active        Boolean              @default(true)
+  timeZone      String               @map("time_zone") @db.VarChar(100)
+  hostingType   WinThorHostingType   @default(ON_PREMISE) @map("hosting_type")
+  executionMode WinThorExecutionMode @default(LOCAL_WINDOWS) @map("execution_mode")
+  createdAt     DateTime             @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.DateTime(3)
+
+  company        Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  accessProfiles WinThorAccessProfile[]
+  agents         Agent[]
+  schedules      AutomationSchedule[]
+  runs           AutomationRun[]
+
+  @@unique([companyId, name])
+  @@index([active])
+  @@map("winthor_instances")
+}
+
+model WinThorAccessProfile {
+  id                String               @id @default(uuid()) @db.Char(36)
+  winthorInstanceId String               @map("winthor_instance_id") @db.Char(36)
+  type              WinThorExecutionMode
+  endpoint          String?              @db.VarChar(500)
+  applicationName   String?              @map("application_name") @db.VarChar(150)
+  username          String?              @db.VarChar(255)
+  secretReference   String?              @map("secret_reference") @db.VarChar(500)
+  enabled           Boolean              @default(true)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.DateTime(3)
+
+  winthorInstance WinThorInstance @relation(fields: [winthorInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([winthorInstanceId, enabled, type])
+  @@map("winthor_access_profiles")
+}
+
+model Agent {
+  id                String      @id @default(uuid()) @db.Char(36)
+  winthorInstanceId String      @map("winthor_instance_id") @db.Char(36)
+  name              String      @db.VarChar(150)
+  hostname          String      @db.VarChar(255)
+  version           String?     @db.VarChar(50)
+  status            AgentStatus @default(OFFLINE)
+  lastSeenAt        DateTime?   @map("last_seen_at") @db.DateTime(3)
+  registeredAt      DateTime    @default(now()) @map("registered_at") @db.DateTime(3)
+  enabled           Boolean     @default(true)
+  createdAt         DateTime    @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.DateTime(3)
+
+  winthorInstance WinThorInstance  @relation(fields: [winthorInstanceId], references: [id], onDelete: Restrict)
+  credentials      AgentCredential[]
+  claimedSteps     AutomationStep[]
+
+  @@unique([winthorInstanceId, hostname])
+  @@index([winthorInstanceId, enabled])
+  @@index([lastSeenAt])
+  @@map("agents")
+}
+
+model AgentCredential {
+  id         String    @id @default(uuid()) @db.Char(36)
+  agentId    String    @map("agent_id") @db.Char(36)
+
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+
+  lastUsedAt DateTime? @map("last_used_at") @db.DateTime(3)
+  revokedAt  DateTime? @map("revoked_at") @db.DateTime(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, revokedAt])
+  @@map("agent_credentials")
+}
+
+model AutomationSchedule {
+  id                String    @id @default(uuid()) @db.Char(36)
+  winthorInstanceId String    @map("winthor_instance_id") @db.Char(36)
+  automationCode    String    @map("automation_code") @db.VarChar(50)
+  name              String    @db.VarChar(150)
+  enabled           Boolean   @default(true)
+  timeZone          String    @map("time_zone") @db.VarChar(100)
+  cronExpression    String    @map("cron_expression") @db.VarChar(100)
+  nextRunAt         DateTime  @map("next_run_at") @db.DateTime(3)
+  lastRunAt         DateTime? @map("last_run_at") @db.DateTime(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  winthorInstance WinThorInstance @relation(fields: [winthorInstanceId], references: [id], onDelete: Restrict)
+  runs             AutomationRun[]
+
+  @@index([enabled, nextRunAt])
+  @@index([winthorInstanceId, enabled])
+  @@map("automation_schedules")
+}
+
+model AutomationRun {
+  id                String              @id @default(uuid()) @db.Char(36)
+  winthorInstanceId String              @map("winthor_instance_id") @db.Char(36)
+  scheduleId        String?             @map("schedule_id") @db.Char(36)
+  automationCode    String              @map("automation_code") @db.VarChar(50)
+  deduplicationKey  String              @unique @map("deduplication_key") @db.VarChar(255)
+  status            AutomationRunStatus @default(PENDING)
+  scheduledFor      DateTime?           @map("scheduled_for") @db.DateTime(3)
+  startedAt         DateTime?           @map("started_at") @db.DateTime(3)
+  finishedAt        DateTime?           @map("finished_at") @db.DateTime(3)
+  errorCode         String?             @map("error_code") @db.VarChar(100)
+  errorMessage      String?             @map("error_message") @db.Text
+  createdAt         DateTime            @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.DateTime(3)
+
+  winthorInstance WinThorInstance    @relation(fields: [winthorInstanceId], references: [id], onDelete: Restrict)
+  schedule        AutomationSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  steps           AutomationStep[]
+
+  @@index([winthorInstanceId, status])
+  @@index([scheduleId, scheduledFor])
+  @@index([status, scheduledFor])
+  @@map("automation_runs")
+}
+
+model AutomationStep {
+  id               String               @id @default(uuid()) @db.Char(36)
+  runId            String               @map("run_id") @db.Char(36)
+  code             String               @db.VarChar(100)
+  name             String               @db.VarChar(150)
+  sequenceNumber   Int                  @map("sequence_number")
+  status           AutomationStepStatus @default(PENDING)
+  payload          Json?
+  result           Json?
+  claimedByAgentId String?              @map("claimed_by_agent_id") @db.Char(36)
+  claimToken       String?              @unique @map("claim_token") @db.Char(36)
+  claimedAt        DateTime?            @map("claimed_at") @db.DateTime(3)
+  leaseExpiresAt   DateTime?            @map("lease_expires_at") @db.DateTime(3)
+  attemptCount     Int                  @default(0) @map("attempt_count")
+  startedAt        DateTime?            @map("started_at") @db.DateTime(3)
+  finishedAt       DateTime?            @map("finished_at") @db.DateTime(3)
+  errorCode        String?              @map("error_code") @db.VarChar(100)
+  errorMessage     String?              @map("error_message") @db.Text
+  createdAt        DateTime             @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.DateTime(3)
+
+  run            AutomationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  claimedByAgent Agent?         @relation(fields: [claimedByAgentId], references: [id], onDelete: SetNull)
+
+  @@unique([runId, code])
+  @@unique([runId, sequenceNumber])
+  @@index([runId, status])
+  @@index([status, leaseExpiresAt])
+  @@index([claimedByAgentId, status])
+  @@map("automation_steps")
+}

@@ -1,0 +1,29 @@
+{
+  "name": "winaut",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "dev:api": "pnpm --filter @winaut/api start:dev",
+    "build:api": "pnpm --filter @winaut/api build",
+    "test:api": "pnpm --filter @winaut/api test",
+    "build:agent": "pnpm --filter @winaut/agent build",
+    "test:agent": "pnpm --filter @winaut/agent test",
+    "build:contracts": "pnpm --filter @winaut/contracts build",
+    "db:up": "docker compose --env-file apps/api/.env -f apps/api/docker-compose.yml up -d",
+    "db:down": "docker compose --env-file apps/api/.env -f apps/api/docker-compose.yml down",
+    "db:logs": "docker compose --env-file apps/api/.env -f apps/api/docker-compose.yml logs -f mysql",
+    "db:ps": "docker compose --env-file apps/api/.env -f apps/api/docker-compose.yml ps",
+    "prisma:generate": "pnpm --filter @winaut/api prisma:generate",
+    "prisma:validate": "pnpm --filter @winaut/api prisma:validate",
+    "dev:web": "pnpm --filter @winaut/web dev",
+    "build:web": "pnpm --filter @winaut/web build",
+    "lint:web": "pnpm --filter @winaut/web lint"
+  },
+  "devDependencies": {
+    "turbo": "latest"
+  }
+}
