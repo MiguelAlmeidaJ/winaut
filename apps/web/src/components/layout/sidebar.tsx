@@ -15,7 +15,7 @@ const items = [
   { href: '/winthor-instances', label: 'Ambientes WinThor' },
   { href: '/agents', label: 'Agents' },
   { href: '/schedules', label: 'Agendamentos' },
-  { href: '/runs', label: 'Execuções', disabled: true },
+  { href: '/runs', label: 'Execuções' },
 ] satisfies readonly NavigationItem[];
 
 function isActive(pathname: string, href: string): boolean {

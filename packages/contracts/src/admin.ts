@@ -185,6 +185,89 @@ export interface AutomationScheduleListItem {
   };
 }
 
+
+export const AutomationRunStatus = {
+  PENDING: 'PENDING',
+  RUNNING: 'RUNNING',
+  SUCCEEDED: 'SUCCEEDED',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export type AutomationRunStatus =
+  (typeof AutomationRunStatus)[keyof typeof AutomationRunStatus];
+
+export const AutomationStepStatus = {
+  PENDING: 'PENDING',
+  RUNNING: 'RUNNING',
+  SUCCEEDED: 'SUCCEEDED',
+  FAILED: 'FAILED',
+  SKIPPED: 'SKIPPED',
+} as const;
+
+export type AutomationStepStatus =
+  (typeof AutomationStepStatus)[keyof typeof AutomationStepStatus];
+
+export interface AutomationRunFilters {
+  companyId?: string;
+  winthorInstanceId?: string;
+  automationCode?: string;
+  status?: AutomationRunStatus;
+  from?: DateTimeString;
+  to?: DateTimeString;
+  limit?: number;
+}
+
+export interface AutomationRunListItem {
+  id: string;
+  winthorInstanceId: string;
+  scheduleId: string | null;
+  automationCode: string;
+  status: AutomationRunStatus;
+  scheduledFor: DateTimeString | null;
+  startedAt: DateTimeString | null;
+  finishedAt: DateTimeString | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: DateTimeString;
+  updatedAt: DateTimeString;
+  winthorInstance: Omit<WinThorInstanceListItem, '_count'>;
+  schedule: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+export interface AutomationStepItem {
+  id: string;
+  runId: string;
+  code: string;
+  name: string;
+  sequenceNumber: number;
+  status: AutomationStepStatus;
+  payload: unknown;
+  result: unknown;
+  claimedByAgentId: string | null;
+  claimedAt: DateTimeString | null;
+  leaseExpiresAt: DateTimeString | null;
+  attemptCount: number;
+  startedAt: DateTimeString | null;
+  finishedAt: DateTimeString | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: DateTimeString;
+  updatedAt: DateTimeString;
+  claimedByAgent: {
+    id: string;
+    name: string;
+    hostname: string;
+  } | null;
+}
+
+export interface AutomationRunDetail extends AutomationRunListItem {
+  steps: AutomationStepItem[];
+}
+
 export interface HealthResponse {
   status: 'ok';
   services: {

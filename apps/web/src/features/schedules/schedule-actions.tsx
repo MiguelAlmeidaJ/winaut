@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AutomationScheduleListItem } from '@winaut/contracts';
 import { useState } from 'react';
 
+import { runKeys } from '@/features/runs/queries';
 import { winThorInstanceKeys } from '@/features/winthor-instances/queries';
 import { apiClient } from '@/lib/api/client';
 
@@ -21,6 +22,7 @@ export function ScheduleActions({ schedule }: ScheduleActionsProps) {
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: scheduleKeys.all }),
+      queryClient.invalidateQueries({ queryKey: runKeys.all }),
       queryClient.invalidateQueries({
         queryKey: winThorInstanceKeys.detail(schedule.winthorInstanceId),
       }),

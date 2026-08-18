@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 import { AutomationDefinitionRegistry } from '../automation-definitions/automation-definition.registry';
 import { PrismaService } from '../database/prisma.service';
+import { ListAutomationRunsDto } from './dto/list-automation-runs.dto';
 import {
   AutomationRunStatus,
   AutomationStepStatus,
@@ -50,6 +51,51 @@ export class AutomationRunsService {
       `Manual run created: ${run.id} (${schedule.automationCode})`,
     );
     return this.findOne(run.id);
+  }
+
+  findAll(query: ListAutomationRunsDto) {
+    const createdAt =
+      query.from || query.to
+        ? {
+            ...(query.from ? { gte: new Date(query.from) } : {}),
+            ...(query.to ? { lte: new Date(query.to) } : {}),
+          }
+        : undefined;
+
+    return this.prisma.db.automationRun.findMany({
+      where: {
+        winthorInstanceId: query.winthorInstanceId,
+        automationCode: query.automationCode,
+        status: query.status,
+        createdAt,
+        ...(query.companyId
+          ? {
+              winthorInstance: {
+                is: {
+                  companyId: query.companyId,
+                },
+              },
+            }
+          : {}),
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: query.limit,
+      include: {
+        winthorInstance: {
+          include: {
+            company: true,
+          },
+        },
+        schedule: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
   }
 
   async findOne(id: string) {

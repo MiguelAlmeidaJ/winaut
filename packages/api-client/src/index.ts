@@ -7,6 +7,9 @@ import type {
   AutomationScheduleListItem,
   CreateAutomationScheduleInput,
   UpdateAutomationScheduleInput,
+  AutomationRunDetail,
+  AutomationRunFilters,
+  AutomationRunListItem,
   CompanyListItem,
   HealthResponse,
   RevokeAgentCredentialResponse,
@@ -56,7 +59,11 @@ export interface WinAutApiClient {
     id: string,
     input: UpdateAutomationScheduleInput,
   ): Promise<AutomationScheduleListItem>;
-  triggerAutomationSchedule(id: string): Promise<unknown>;
+  triggerAutomationSchedule(id: string): Promise<AutomationRunDetail>;
+  getAutomationRuns(
+    filters?: AutomationRunFilters,
+  ): Promise<AutomationRunListItem[]>;
+  getAutomationRun(id: string): Promise<AutomationRunDetail>;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -199,9 +206,44 @@ export function createWinAutApiClient(
         },
       ),
     triggerAutomationSchedule: (id) =>
-      request<unknown>(
+      request<AutomationRunDetail>(
         `/api/automation-schedules/${encodeURIComponent(id)}/trigger`,
         { method: 'POST' },
+      ),
+    getAutomationRuns: (filters = {}) => {
+      const search = new URLSearchParams();
+
+      if (filters.companyId) {
+        search.set('companyId', filters.companyId);
+      }
+      if (filters.winthorInstanceId) {
+        search.set('winthorInstanceId', filters.winthorInstanceId);
+      }
+      if (filters.automationCode) {
+        search.set('automationCode', filters.automationCode);
+      }
+      if (filters.status) {
+        search.set('status', filters.status);
+      }
+      if (filters.from) {
+        search.set('from', filters.from);
+      }
+      if (filters.to) {
+        search.set('to', filters.to);
+      }
+      if (filters.limit !== undefined) {
+        search.set('limit', String(filters.limit));
+      }
+
+      const query = search.toString();
+
+      return request<AutomationRunListItem[]>(
+        `/api/automation-runs${query ? `?${query}` : ''}`,
+      );
+    },
+    getAutomationRun: (id) =>
+      request<AutomationRunDetail>(
+        `/api/automation-runs/${encodeURIComponent(id)}`,
       ),
   };
 }

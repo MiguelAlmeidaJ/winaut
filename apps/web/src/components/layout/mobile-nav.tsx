@@ -9,6 +9,7 @@ const items = [
   { href: '/winthor-instances', label: 'Ambientes WinThor' },
   { href: '/agents', label: 'Agents' },
   { href: '/schedules', label: 'Agendamentos' },
+  { href: '/runs', label: 'Execuções' },
 ] as const;
 
 export function MobileNav() {
