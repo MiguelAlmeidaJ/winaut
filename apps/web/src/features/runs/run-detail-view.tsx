@@ -8,6 +8,8 @@ import { ErrorState } from '@/components/ui/error-state';
 import { formatDateTime } from '@/lib/format-date';
 
 import { automationRunQueryOptions } from './queries';
+import { RunProgressCard } from './run-progress-card';
+import { RunRefreshStatus } from './run-refresh-status';
 import { RunStatusBadge } from './run-status-badge';
 
 interface RunDetailViewProps {
@@ -95,6 +97,8 @@ export function RunDetailView({ runId }: RunDetailViewProps) {
         <RunStatusBadge status={run.status} />
       </div>
 
+      <RunRefreshStatus mode="detail" status={run.status} />
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="Agendado para"
@@ -110,6 +114,8 @@ export function RunDetailView({ runId }: RunDetailViewProps) {
         />
         <SummaryCard label="Etapas" value={String(run.steps.length)} />
       </div>
+
+      <RunProgressCard runStatus={run.status} steps={run.steps} />
 
       {run.errorCode || run.errorMessage ? (
         <section className="rounded-xl border border-red-200 bg-red-50 p-5">

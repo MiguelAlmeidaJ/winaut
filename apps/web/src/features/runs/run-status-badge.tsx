@@ -32,6 +32,12 @@ export function RunStatusBadge({ status }: { status: Status }) {
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${styles[status]}`}
     >
+      {status === 'RUNNING' ? (
+        <span
+          className="mr-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-current"
+          aria-hidden="true"
+        />
+      ) : null}
       {labels[status]}
     </span>
   );

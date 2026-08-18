@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AutomationScheduleListItem } from '@winaut/contracts';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { runKeys } from '@/features/runs/queries';
@@ -17,7 +18,7 @@ interface ScheduleActionsProps {
 export function ScheduleActions({ schedule }: ScheduleActionsProps) {
   const queryClient = useQueryClient();
   const [confirmTrigger, setConfirmTrigger] = useState(false);
-  const [triggered, setTriggered] = useState(false);
+  const [triggeredRunId, setTriggeredRunId] = useState<string | null>(null);
 
   async function refresh() {
     await Promise.all([
@@ -37,9 +38,9 @@ export function ScheduleActions({ schedule }: ScheduleActionsProps) {
 
   const triggerMutation = useMutation({
     mutationFn: () => apiClient.triggerAutomationSchedule(schedule.id),
-    onSuccess: async () => {
+    onSuccess: async (run) => {
       setConfirmTrigger(false);
-      setTriggered(true);
+      setTriggeredRunId(run.id);
       await refresh();
     },
   });
@@ -53,7 +54,7 @@ export function ScheduleActions({ schedule }: ScheduleActionsProps) {
           <button
             type="button"
             onClick={() => {
-              setTriggered(false);
+              setTriggeredRunId(null);
               setConfirmTrigger(true);
             }}
             disabled={triggerMutation.isPending || toggleMutation.isPending}
@@ -75,10 +76,13 @@ export function ScheduleActions({ schedule }: ScheduleActionsProps) {
           </button>
         </div>
 
-        {triggered ? (
-          <span className="text-xs font-medium text-emerald-700">
-            Execução manual criada.
-          </span>
+        {triggeredRunId ? (
+          <Link
+            href={`/runs/${triggeredRunId}`}
+            className="text-xs font-medium text-emerald-700 hover:underline"
+          >
+            Execução criada · acompanhar
+          </Link>
         ) : null}
 
         {error ? (

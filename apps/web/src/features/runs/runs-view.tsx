@@ -11,7 +11,11 @@ import {
   RunFilters,
   type RunFilterValues,
 } from './run-filters';
-import { automationRunsQueryOptions } from './queries';
+import {
+  automationRunsQueryOptions,
+  isActiveRunStatus,
+} from './queries';
+import { RunRefreshStatus } from './run-refresh-status';
 import { RunsTable } from './runs-table';
 
 const emptyFilters: RunFilterValues = {
@@ -95,6 +99,15 @@ export function RunsView() {
           setFilters({ limit: 100 });
         }}
       />
+
+      {runsQuery.data ? (
+        <RunRefreshStatus
+          mode="list"
+          hasActiveRuns={runsQuery.data.some((run) =>
+            isActiveRunStatus(run.status),
+          )}
+        />
+      ) : null}
 
       {runsQuery.isPending ? (
         <TableSkeleton />
