@@ -36,8 +36,12 @@ export function AgentSummary({ agent }: AgentSummaryProps) {
       />
       <SummaryCard
         label="Último heartbeat"
-        value={formatDateTime(agent.lastSeenAt, timeZone)}
-        secondary={timeZone}
+        value={
+          agent.lastSeenAt
+            ? formatDateTime(agent.lastSeenAt, timeZone)
+            : 'Nunca'
+        }
+        secondary={agent.lastSeenAt ? timeZone : 'Aguardando primeiro heartbeat'}
       />
       <SummaryCard
         label="Registrado em"

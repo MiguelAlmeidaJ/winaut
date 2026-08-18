@@ -7,6 +7,7 @@ interface OneTimeTokenDialogProps {
   warning: string;
   title: string;
   onClose: () => void;
+  instructions?: readonly string[];
 }
 
 export function OneTimeTokenDialog({
@@ -14,6 +15,7 @@ export function OneTimeTokenDialog({
   warning,
   title,
   onClose,
+  instructions,
 }: OneTimeTokenDialogProps) {
   const [copyStatus, setCopyStatus] =
     useState<'idle' | 'copied' | 'error'>('idle');
@@ -58,6 +60,17 @@ export function OneTimeTokenDialog({
           Depois de fechar esta janela, o WinAut não poderá recuperar este token.
           Gere uma nova credencial se ele for perdido.
         </p>
+
+        {instructions?.length ? (
+          <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+            <p className="text-sm font-semibold">Próximos passos</p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-[var(--muted)]">
+              {instructions.map((instruction) => (
+                <li key={instruction}>{instruction}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
 
         {copyStatus === 'error' ? (
           <p className="mt-3 text-sm text-red-700">

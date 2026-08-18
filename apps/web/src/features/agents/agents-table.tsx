@@ -5,9 +5,9 @@ import Link from 'next/link';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
-import { StatusBadge } from '@/components/ui/status-badge';
 import { formatDateTime } from '@/lib/format-date';
 
+import { AgentStatusBadge } from './components/agent-status-badge';
 import { agentsQueryOptions } from './queries';
 
 function AgentsTableSkeleton() {
@@ -94,14 +94,15 @@ export function AgentsTable() {
                   {agent.version ?? '—'}
                 </td>
                 <td className="px-5 py-4 text-[var(--muted)]">
-                  {formatDateTime(agent.lastSeenAt)}
+                  {agent.lastSeenAt
+                    ? formatDateTime(
+                        agent.lastSeenAt,
+                        agent.winthorInstance.timeZone,
+                      )
+                    : 'Nunca'}
                 </td>
                 <td className="px-5 py-4">
-                  <StatusBadge
-                    active={agent.online}
-                    activeLabel="Online"
-                    inactiveLabel={agent.enabled ? 'Offline' : 'Desabilitado'}
-                  />
+                  <AgentStatusBadge enabled={agent.enabled} online={agent.online} />
                 </td>
               </tr>
             ))}

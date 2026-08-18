@@ -5,6 +5,7 @@ interface ConfirmDialogProps {
   description: string;
   confirmLabel: string;
   pending?: boolean;
+  pendingLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -14,6 +15,7 @@ export function ConfirmDialog({
   description,
   confirmLabel,
   pending = false,
+  pendingLabel = 'Revogando...',
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -44,7 +46,7 @@ export function ConfirmDialog({
             disabled={pending}
             className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? 'Revogando...' : confirmLabel}
+            {pending ? pendingLabel : confirmLabel}
           </button>
         </div>
       </div>

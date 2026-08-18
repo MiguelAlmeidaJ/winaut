@@ -7,6 +7,7 @@ import type {
   CreateAgentCredentialResponse,
   CreateAgentInput,
   CreateAgentResponse,
+  UpdateAgentInput,
   CreateWinThorAccessProfileInput,
   CreateWinThorInstanceInput,
   UpdateWinThorAccessProfileInput,
@@ -70,6 +71,7 @@ export interface WinAutApiClient {
   getAgents(): Promise<AgentListItem[]>;
   createAgent(input: CreateAgentInput): Promise<CreateAgentResponse>;
   getAgent(id: string): Promise<AgentListItem>;
+  updateAgent(id: string, input: UpdateAgentInput): Promise<AgentListItem>;
   getAgentCredentials(id: string): Promise<AgentCredentialListItem[]>;
   createAgentCredential(id: string): Promise<CreateAgentCredentialResponse>;
   revokeAgentCredential(
@@ -234,6 +236,14 @@ export function createWinAutApiClient(
       }),
     getAgent: (id) =>
       request<AgentListItem>(`/api/agents/${encodeURIComponent(id)}`),
+    updateAgent: (id, input) =>
+      request<AgentListItem>(
+        `/api/agents/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: input,
+        },
+      ),
     getAgentCredentials: (id) =>
       request<AgentCredentialListItem[]>(
         `/api/agents/${encodeURIComponent(id)}/credentials`,

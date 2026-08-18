@@ -76,6 +76,11 @@ export function CreateAgentDialog() {
         token={created.credential.token}
         warning={created.credential.warning}
         onClose={close}
+        instructions={[
+          'Salve este token como WINAUT_AGENT_TOKEN no Windows Agent.',
+          'Configure WINAUT_API_URL com uma URL da API acessível pela máquina do Agent.',
+          'Inicie o Agent e aguarde o primeiro heartbeat; o status passará de Offline para Online.',
+        ]}
       />
     );
   }

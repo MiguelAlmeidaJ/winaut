@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 
 import { ErrorState } from '@/components/ui/error-state';
-import { StatusBadge } from '@/components/ui/status-badge';
 
+import { AgentStatusBadge } from './components/agent-status-badge';
 import { AgentCredentialsSection } from './detail/agent-credentials-section';
+import { AgentLifecycleActions } from './detail/agent-lifecycle-actions';
+import { AgentOnboardingSection } from './detail/agent-onboarding-section';
 import { AgentSummary } from './detail/agent-summary';
 import { agentCredentialsQueryOptions, agentQueryOptions } from './queries';
 
@@ -87,11 +89,13 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
             Identidade, disponibilidade e credenciais do Windows Agent.
           </p>
         </div>
-        <StatusBadge
-          active={agent.online}
-          activeLabel="Online"
-          inactiveLabel={agent.enabled ? 'Offline' : 'Desabilitado'}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <AgentStatusBadge
+            enabled={agent.enabled}
+            online={agent.online}
+          />
+          <AgentLifecycleActions agent={agent} />
+        </div>
       </div>
 
       <AgentSummary agent={agent} />
@@ -111,6 +115,8 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
           <span className="text-[var(--muted)]">{agent.winthorInstance.timeZone}</span>
         </div>
       </section>
+
+      <AgentOnboardingSection agent={agent} />
 
       <AgentCredentialsSection
         agentId={agent.id}

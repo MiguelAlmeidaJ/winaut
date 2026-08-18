@@ -8,6 +8,7 @@ import type { AuthenticatedAgent } from './agent-auth.types';
 import { AgentTokenService } from './agent-token.service';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
+import { UpdateAgentDto } from './dto/update-agent.dto';
 
 @Injectable()
 export class AgentsService {
@@ -183,13 +184,42 @@ export class AgentsService {
     return this.withTemporalStatus(agent);
   }
 
+  async update(id: string, dto: UpdateAgentDto) {
+    const current = await this.findOne(id);
+
+    const updated = await this.prisma.db.agent.update({
+      where: { id },
+      data: {
+        enabled: dto.enabled,
+        status:
+          current.enabled === dto.enabled
+            ? current.status
+            : dto.enabled
+              ? AgentStatus.OFFLINE
+              : AgentStatus.DISABLED,
+      },
+      include: { winthorInstance: { include: { company: true } } },
+    });
+
+    this.logger.log(
+      `Agent ${dto.enabled ? 'enabled' : 'disabled'}: ${updated.id}`,
+    );
+
+    return this.withTemporalStatus(updated);
+  }
+
   private withTemporalStatus<
-    T extends { enabled: boolean; lastSeenAt: Date | null },
+    T extends {
+      enabled: boolean;
+      lastSeenAt: Date | null;
+      status: AgentStatus;
+    },
   >(agent: T, now = new Date()): T & { online: boolean } {
     return {
       ...agent,
       online:
         agent.enabled &&
+        agent.status === AgentStatus.ONLINE &&
         agent.lastSeenAt !== null &&
         now.getTime() - agent.lastSeenAt.getTime() <= this.onlineThresholdMs,
     };

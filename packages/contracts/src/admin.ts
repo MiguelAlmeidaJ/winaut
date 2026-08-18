@@ -189,6 +189,10 @@ export interface CreateAgentInput {
   version?: string;
 }
 
+export interface UpdateAgentInput {
+  enabled: boolean;
+}
+
 export interface CreateAgentResponse {
   agent: AgentListItem;
   credential: {
