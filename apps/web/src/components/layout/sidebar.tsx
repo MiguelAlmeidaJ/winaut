@@ -14,7 +14,7 @@ const items = [
   { href: '/companies', label: 'Empresas' },
   { href: '/winthor-instances', label: 'Ambientes WinThor' },
   { href: '/agents', label: 'Agents' },
-  { href: '/schedules', label: 'Agendamentos', disabled: true },
+  { href: '/schedules', label: 'Agendamentos' },
   { href: '/runs', label: 'Execuções', disabled: true },
 ] satisfies readonly NavigationItem[];
 

@@ -5,6 +5,8 @@ import type {
   CreateAgentInput,
   CreateAgentResponse,
   AutomationScheduleListItem,
+  CreateAutomationScheduleInput,
+  UpdateAutomationScheduleInput,
   CompanyListItem,
   HealthResponse,
   RevokeAgentCredentialResponse,
@@ -47,6 +49,14 @@ export interface WinAutApiClient {
     credentialId: string,
   ): Promise<RevokeAgentCredentialResponse>;
   getAutomationSchedules(): Promise<AutomationScheduleListItem[]>;
+  createAutomationSchedule(
+    input: CreateAutomationScheduleInput,
+  ): Promise<AutomationScheduleListItem>;
+  updateAutomationSchedule(
+    id: string,
+    input: UpdateAutomationScheduleInput,
+  ): Promise<AutomationScheduleListItem>;
+  triggerAutomationSchedule(id: string): Promise<unknown>;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -94,7 +104,7 @@ function errorMessage(payload: ApiErrorPayload, status: number): string {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
 }
 
@@ -175,5 +185,23 @@ export function createWinAutApiClient(
       ),
     getAutomationSchedules: () =>
       request<AutomationScheduleListItem[]>('/api/automation-schedules'),
+    createAutomationSchedule: (input) =>
+      request<AutomationScheduleListItem>('/api/automation-schedules', {
+        method: 'POST',
+        body: input,
+      }),
+    updateAutomationSchedule: (id, input) =>
+      request<AutomationScheduleListItem>(
+        `/api/automation-schedules/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: input,
+        },
+      ),
+    triggerAutomationSchedule: (id) =>
+      request<unknown>(
+        `/api/automation-schedules/${encodeURIComponent(id)}/trigger`,
+        { method: 'POST' },
+      ),
   };
 }

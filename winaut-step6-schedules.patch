@@ -1,0 +1,793 @@
+diff --git a/apps/api/src/automation-runs/automation-runs.service.ts b/apps/api/src/automation-runs/automation-runs.service.ts
+--- a/apps/api/src/automation-runs/automation-runs.service.ts
++++ b/apps/api/src/automation-runs/automation-runs.service.ts
+@@ -49,7 +49,7 @@
+     this.logger.log(
+       `Manual run created: ${run.id} (${schedule.automationCode})`,
+     );
+-    return run;
++    return this.findOne(run.id);
+   }
+ 
+   async findOne(id: string) {
+diff --git a/apps/web/src/components/layout/sidebar.tsx b/apps/web/src/components/layout/sidebar.tsx
+--- a/apps/web/src/components/layout/sidebar.tsx
++++ b/apps/web/src/components/layout/sidebar.tsx
+@@ -14,7 +14,7 @@
+   { href: '/companies', label: 'Empresas' },
+   { href: '/winthor-instances', label: 'Ambientes WinThor' },
+   { href: '/agents', label: 'Agents' },
+-  { href: '/schedules', label: 'Agendamentos', disabled: true },
++  { href: '/schedules', label: 'Agendamentos' },
+   { href: '/runs', label: 'Execuções', disabled: true },
+ ] satisfies readonly NavigationItem[];
+ 
+diff --git a/apps/web/src/components/layout/mobile-nav.tsx b/apps/web/src/components/layout/mobile-nav.tsx
+--- a/apps/web/src/components/layout/mobile-nav.tsx
++++ b/apps/web/src/components/layout/mobile-nav.tsx
+@@ -8,6 +8,7 @@
+   { href: '/companies', label: 'Empresas' },
+   { href: '/winthor-instances', label: 'Ambientes WinThor' },
+   { href: '/agents', label: 'Agents' },
++  { href: '/schedules', label: 'Agendamentos' },
+ ] as const;
+ 
+ export function MobileNav() {
+diff --git a/packages/contracts/src/admin.ts b/packages/contracts/src/admin.ts
+--- a/packages/contracts/src/admin.ts
++++ b/packages/contracts/src/admin.ts
+@@ -151,6 +151,23 @@
+   credentialId: string;
+ }
+ 
++
++export interface CreateAutomationScheduleInput {
++  winthorInstanceId: string;
++  automationCode: string;
++  name: string;
++  enabled?: boolean;
++  timeZone: string;
++  cronExpression: string;
++}
++
++export interface UpdateAutomationScheduleInput {
++  name?: string;
++  enabled?: boolean;
++  timeZone?: string;
++  cronExpression?: string;
++}
++
+ export interface AutomationScheduleListItem {
+   id: string;
+   winthorInstanceId: string;
+diff --git a/packages/api-client/src/index.ts b/packages/api-client/src/index.ts
+--- a/packages/api-client/src/index.ts
++++ b/packages/api-client/src/index.ts
+@@ -5,6 +5,8 @@
+   CreateAgentInput,
+   CreateAgentResponse,
+   AutomationScheduleListItem,
++  CreateAutomationScheduleInput,
++  UpdateAutomationScheduleInput,
+   CompanyListItem,
+   HealthResponse,
+   RevokeAgentCredentialResponse,
+@@ -47,6 +49,14 @@
+     credentialId: string,
+   ): Promise<RevokeAgentCredentialResponse>;
+   getAutomationSchedules(): Promise<AutomationScheduleListItem[]>;
++  createAutomationSchedule(
++    input: CreateAutomationScheduleInput,
++  ): Promise<AutomationScheduleListItem>;
++  updateAutomationSchedule(
++    id: string,
++    input: UpdateAutomationScheduleInput,
++  ): Promise<AutomationScheduleListItem>;
++  triggerAutomationSchedule(id: string): Promise<unknown>;
+ }
+ 
+ function normalizeBaseUrl(baseUrl: string): string {
+@@ -94,7 +104,7 @@
+ }
+ 
+ interface RequestOptions {
+-  method?: 'GET' | 'POST' | 'DELETE';
++  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+   body?: unknown;
+ }
+ 
+@@ -175,5 +185,23 @@
+       ),
+     getAutomationSchedules: () =>
+       request<AutomationScheduleListItem[]>('/api/automation-schedules'),
++    createAutomationSchedule: (input) =>
++      request<AutomationScheduleListItem>('/api/automation-schedules', {
++        method: 'POST',
++        body: input,
++      }),
++    updateAutomationSchedule: (id, input) =>
++      request<AutomationScheduleListItem>(
++        `/api/automation-schedules/${encodeURIComponent(id)}`,
++        {
++          method: 'PATCH',
++          body: input,
++        },
++      ),
++    triggerAutomationSchedule: (id) =>
++      request<unknown>(
++        `/api/automation-schedules/${encodeURIComponent(id)}/trigger`,
++        { method: 'POST' },
++      ),
+   };
+ }
+diff --git a/apps/web/src/app/schedules/page.tsx b/apps/web/src/app/schedules/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/app/schedules/page.tsx
+@@ -0,0 +1,16 @@
++import { PageHeader } from '@/components/ui/page-header';
++import { CreateScheduleDialog } from '@/features/schedules/create-schedule-dialog';
++import { SchedulesTable } from '@/features/schedules/schedules-table';
++
++export default function SchedulesPage() {
++  return (
++    <>
++      <PageHeader
++        title="Agendamentos"
++        description="Configure quando cada rotina WinThor deve ser executada e acompanhe os próximos horários."
++        action={<CreateScheduleDialog />}
++      />
++      <SchedulesTable />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/schedules/cron.ts b/apps/web/src/features/schedules/cron.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/schedules/cron.ts
+@@ -0,0 +1,62 @@
++export const weekdayOptions = [
++  { value: '1', label: 'Segunda-feira' },
++  { value: '2', label: 'Terça-feira' },
++  { value: '3', label: 'Quarta-feira' },
++  { value: '4', label: 'Quinta-feira' },
++  { value: '5', label: 'Sexta-feira' },
++  { value: '6', label: 'Sábado' },
++  { value: '0', label: 'Domingo' },
++] as const;
++
++const weekdayLabels = new Map(
++  weekdayOptions.map((option) => [option.value, option.label]),
++);
++
++export function buildWeeklyCron(weekday: string, time: string): string {
++  const [hourText, minuteText] = time.split(':');
++  const hour = Number(hourText);
++  const minute = Number(minuteText);
++  const day = Number(weekday);
++
++  if (
++    !Number.isInteger(hour) ||
++    hour < 0 ||
++    hour > 23 ||
++    !Number.isInteger(minute) ||
++    minute < 0 ||
++    minute > 59 ||
++    !Number.isInteger(day) ||
++    day < 0 ||
++    day > 6
++  ) {
++    throw new Error('Dia da semana ou horário inválido.');
++  }
++
++  return `0 ${minute} ${hour} * * ${day}`;
++}
++
++export function describeCron(cronExpression: string): string {
++  const match = cronExpression.match(
++    /^0\s+(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+([0-6])$/,
++  );
++
++  if (!match) {
++    return cronExpression;
++  }
++
++  const [, minuteText, hourText, weekday] = match;
++  const minute = Number(minuteText);
++  const hour = Number(hourText);
++
++  if (minute > 59 || hour > 23) {
++    return cronExpression;
++  }
++
++  const label = weekdayLabels.get(weekday);
++
++  if (!label) {
++    return cronExpression;
++  }
++
++  return `${label} às ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
++}
+diff --git a/apps/web/src/features/schedules/create-schedule-dialog.tsx b/apps/web/src/features/schedules/create-schedule-dialog.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/schedules/create-schedule-dialog.tsx
+@@ -0,0 +1,317 @@
++'use client';
++
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import type { FormEvent } from 'react';
++import { useState } from 'react';
++
++import {
++  winThorInstanceKeys,
++  winThorInstancesQueryOptions,
++} from '@/features/winthor-instances/queries';
++import { apiClient } from '@/lib/api/client';
++
++import { buildWeeklyCron, weekdayOptions } from './cron';
++import { scheduleKeys } from './queries';
++
++const automationOptions = [
++  { value: '507', label: 'Rotina 507 — Recálculos' },
++  { value: '552', label: 'Rotina 552 — Executar configuração existente' },
++] as const;
++
++export function CreateScheduleDialog() {
++  const queryClient = useQueryClient();
++  const [open, setOpen] = useState(false);
++  const [companyId, setCompanyId] = useState('');
++  const [winthorInstanceId, setWinthorInstanceId] = useState('');
++  const [automationCode, setAutomationCode] = useState('');
++  const [name, setName] = useState('');
++  const [weekday, setWeekday] = useState('1');
++  const [time, setTime] = useState('06:00');
++  const [enabled, setEnabled] = useState(true);
++
++  const instancesQuery = useQuery({
++    ...winThorInstancesQueryOptions,
++    enabled: open,
++  });
++
++  const activeInstances =
++    instancesQuery.data?.filter(
++      (instance) => instance.active && instance.company.active,
++    ) ?? [];
++
++  const companies = Array.from(
++    new Map(
++      activeInstances.map((instance) => [
++        instance.company.id,
++        instance.company,
++      ]),
++    ).values(),
++  ).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
++
++  const companyInstances = activeInstances.filter(
++    (instance) => instance.company.id === companyId,
++  );
++
++  const selectedInstance = activeInstances.find(
++    (instance) => instance.id === winthorInstanceId,
++  );
++
++  const mutation = useMutation({
++    mutationFn: () => {
++      if (!selectedInstance) {
++        throw new Error('Selecione um ambiente WinThor válido.');
++      }
++
++      return apiClient.createAutomationSchedule({
++        winthorInstanceId: selectedInstance.id,
++        automationCode,
++        name: name.trim(),
++        enabled,
++        timeZone: selectedInstance.timeZone,
++        cronExpression: buildWeeklyCron(weekday, time),
++      });
++    },
++    onSuccess: async (schedule) => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: scheduleKeys.all }),
++        queryClient.invalidateQueries({ queryKey: winThorInstanceKeys.all }),
++        queryClient.invalidateQueries({
++          queryKey: winThorInstanceKeys.detail(schedule.winthorInstanceId),
++        }),
++      ]);
++      close();
++    },
++  });
++
++  function resetForm() {
++    setCompanyId('');
++    setWinthorInstanceId('');
++    setAutomationCode('');
++    setName('');
++    setWeekday('1');
++    setTime('06:00');
++    setEnabled(true);
++  }
++
++  function close() {
++    setOpen(false);
++    mutation.reset();
++    resetForm();
++  }
++
++  function submit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++
++    if (
++      !companyId ||
++      !winthorInstanceId ||
++      !automationCode ||
++      !name.trim() ||
++      !selectedInstance
++    ) {
++      return;
++    }
++
++    mutation.mutate();
++  }
++
++  return (
++    <>
++      <button
++        type="button"
++        onClick={() => setOpen(true)}
++        className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
++      >
++        Novo agendamento
++      </button>
++
++      {open ? (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
++          <div
++            role="dialog"
++            aria-modal="true"
++            aria-labelledby="create-schedule-title"
++            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-6 shadow-xl"
++          >
++            <h2 id="create-schedule-title" className="text-lg font-semibold">
++              Novo agendamento
++            </h2>
++            <p className="mt-1 text-sm text-[var(--muted)]">
++              Escolha o ambiente, a rotina, o dia e o horário. O cron é gerado automaticamente.
++            </p>
++
++            {instancesQuery.isPending ? (
++              <div className="mt-6 h-48 animate-pulse rounded-lg bg-[var(--surface-muted)]" />
++            ) : instancesQuery.isError ? (
++              <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
++                {instancesQuery.error.message}
++              </div>
++            ) : activeInstances.length === 0 ? (
++              <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
++                Cadastre ou ative um Ambiente WinThor antes de criar um agendamento.
++              </div>
++            ) : (
++              <form className="mt-6 space-y-4" onSubmit={submit}>
++                <div className="grid gap-4 md:grid-cols-2">
++                  <label className="block text-sm font-medium">
++                    Empresa
++                    <select
++                      required
++                      value={companyId}
++                      onChange={(event) => {
++                        setCompanyId(event.target.value);
++                        setWinthorInstanceId('');
++                      }}
++                      className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                    >
++                      <option value="">Selecione uma empresa</option>
++                      {companies.map((company) => (
++                        <option key={company.id} value={company.id}>
++                          {company.name}
++                        </option>
++                      ))}
++                    </select>
++                  </label>
++
++                  <label className="block text-sm font-medium">
++                    Ambiente WinThor
++                    <select
++                      required
++                      disabled={!companyId}
++                      value={winthorInstanceId}
++                      onChange={(event) => setWinthorInstanceId(event.target.value)}
++                      className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)] disabled:bg-[var(--surface-muted)]"
++                    >
++                      <option value="">Selecione um ambiente</option>
++                      {companyInstances.map((instance) => (
++                        <option key={instance.id} value={instance.id}>
++                          {instance.name}
++                        </option>
++                      ))}
++                    </select>
++                  </label>
++                </div>
++
++                <div className="grid gap-4 md:grid-cols-2">
++                  <label className="block text-sm font-medium">
++                    Rotina
++                    <select
++                      required
++                      value={automationCode}
++                      onChange={(event) => setAutomationCode(event.target.value)}
++                      className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                    >
++                      <option value="">Selecione uma rotina</option>
++                      {automationOptions.map((option) => (
++                        <option key={option.value} value={option.value}>
++                          {option.label}
++                        </option>
++                      ))}
++                    </select>
++                  </label>
++
++                  <label className="block text-sm font-medium">
++                    Nome do agendamento
++                    <input
++                      required
++                      maxLength={150}
++                      value={name}
++                      onChange={(event) => setName(event.target.value)}
++                      placeholder="Rotina 507 semanal"
++                      className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                    />
++                  </label>
++                </div>
++
++                <div className="grid gap-4 md:grid-cols-2">
++                  <label className="block text-sm font-medium">
++                    Executar toda
++                    <select
++                      required
++                      value={weekday}
++                      onChange={(event) => setWeekday(event.target.value)}
++                      className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                    >
++                      {weekdayOptions.map((option) => (
++                        <option key={option.value} value={option.value}>
++                          {option.label}
++                        </option>
++                      ))}
++                    </select>
++                  </label>
++
++                  <label className="block text-sm font-medium">
++                    Horário
++                    <input
++                      required
++                      type="time"
++                      value={time}
++                      onChange={(event) => setTime(event.target.value)}
++                      className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                    />
++                  </label>
++                </div>
++
++                <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
++                  <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
++                    Timezone do ambiente
++                  </p>
++                  <p className="mt-1 text-sm font-medium">
++                    {selectedInstance?.timeZone ?? 'Selecione o ambiente WinThor'}
++                  </p>
++                </div>
++
++                <label className="flex items-center gap-2 text-sm font-medium">
++                  <input
++                    type="checkbox"
++                    checked={enabled}
++                    onChange={(event) => setEnabled(event.target.checked)}
++                    className="h-4 w-4"
++                  />
++                  Agendamento ativo
++                </label>
++
++                {mutation.isError ? (
++                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
++                    {mutation.error.message}
++                  </div>
++                ) : null}
++
++                <div className="flex justify-end gap-2 pt-2">
++                  <button
++                    type="button"
++                    onClick={close}
++                    disabled={mutation.isPending}
++                    className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++                  >
++                    Cancelar
++                  </button>
++                  <button
++                    type="submit"
++                    disabled={mutation.isPending}
++                    className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
++                  >
++                    {mutation.isPending ? 'Salvando...' : 'Criar agendamento'}
++                  </button>
++                </div>
++              </form>
++            )}
++
++            {!instancesQuery.isPending &&
++            (instancesQuery.isError || activeInstances.length === 0) ? (
++              <div className="mt-5 flex justify-end">
++                <button
++                  type="button"
++                  onClick={close}
++                  className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)]"
++                >
++                  Fechar
++                </button>
++              </div>
++            ) : null}
++          </div>
++        </div>
++      ) : null}
++    </>
++  );
++}
+diff --git a/apps/web/src/features/schedules/schedule-actions.tsx b/apps/web/src/features/schedules/schedule-actions.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/schedules/schedule-actions.tsx
+@@ -0,0 +1,142 @@
++'use client';
++
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import type { AutomationScheduleListItem } from '@winaut/contracts';
++import { useState } from 'react';
++
++import { winThorInstanceKeys } from '@/features/winthor-instances/queries';
++import { apiClient } from '@/lib/api/client';
++
++import { scheduleKeys } from './queries';
++
++interface ScheduleActionsProps {
++  schedule: AutomationScheduleListItem;
++}
++
++export function ScheduleActions({ schedule }: ScheduleActionsProps) {
++  const queryClient = useQueryClient();
++  const [confirmTrigger, setConfirmTrigger] = useState(false);
++  const [triggered, setTriggered] = useState(false);
++
++  async function refresh() {
++    await Promise.all([
++      queryClient.invalidateQueries({ queryKey: scheduleKeys.all }),
++      queryClient.invalidateQueries({
++        queryKey: winThorInstanceKeys.detail(schedule.winthorInstanceId),
++      }),
++    ]);
++  }
++
++  const toggleMutation = useMutation({
++    mutationFn: (enabled: boolean) =>
++      apiClient.updateAutomationSchedule(schedule.id, { enabled }),
++    onSuccess: refresh,
++  });
++
++  const triggerMutation = useMutation({
++    mutationFn: () => apiClient.triggerAutomationSchedule(schedule.id),
++    onSuccess: async () => {
++      setConfirmTrigger(false);
++      setTriggered(true);
++      await refresh();
++    },
++  });
++
++  const error = toggleMutation.error ?? triggerMutation.error;
++
++  return (
++    <>
++      <div className="flex min-w-40 flex-col items-end gap-2">
++        <div className="flex flex-wrap justify-end gap-2">
++          <button
++            type="button"
++            onClick={() => {
++              setTriggered(false);
++              setConfirmTrigger(true);
++            }}
++            disabled={triggerMutation.isPending || toggleMutation.isPending}
++            className="rounded-md border border-[var(--border)] bg-white px-3 py-2 text-xs font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++          >
++            Executar agora
++          </button>
++          <button
++            type="button"
++            onClick={() => toggleMutation.mutate(!schedule.enabled)}
++            disabled={triggerMutation.isPending || toggleMutation.isPending}
++            className="rounded-md border border-[var(--border)] bg-white px-3 py-2 text-xs font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++          >
++            {toggleMutation.isPending
++              ? 'Salvando...'
++              : schedule.enabled
++                ? 'Desativar'
++                : 'Ativar'}
++          </button>
++        </div>
++
++        {triggered ? (
++          <span className="text-xs font-medium text-emerald-700">
++            Execução manual criada.
++          </span>
++        ) : null}
++
++        {error ? (
++          <span className="max-w-64 text-right text-xs text-red-700">
++            {error.message}
++          </span>
++        ) : null}
++      </div>
++
++      {confirmTrigger ? (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
++          <div
++            role="dialog"
++            aria-modal="true"
++            aria-labelledby={`trigger-schedule-${schedule.id}`}
++            className="w-full max-w-md rounded-xl border border-[var(--border)] bg-white p-6 shadow-xl"
++          >
++            <h2
++              id={`trigger-schedule-${schedule.id}`}
++              className="text-lg font-semibold"
++            >
++              Executar rotina {schedule.automationCode} agora?
++            </h2>
++            <p className="mt-2 text-sm text-[var(--muted)]">
++              Uma execução manual será criada para {schedule.winthorInstance.company.name}
++              {' · '}
++              {schedule.winthorInstance.name}. Esta ação não altera o horário do
++              agendamento.
++            </p>
++
++            {triggerMutation.isError ? (
++              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
++                {triggerMutation.error.message}
++              </div>
++            ) : null}
++
++            <div className="mt-6 flex justify-end gap-2">
++              <button
++                type="button"
++                onClick={() => {
++                  setConfirmTrigger(false);
++                  triggerMutation.reset();
++                }}
++                disabled={triggerMutation.isPending}
++                className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++              >
++                Cancelar
++              </button>
++              <button
++                type="button"
++                onClick={() => triggerMutation.mutate()}
++                disabled={triggerMutation.isPending}
++                className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
++              >
++                {triggerMutation.isPending ? 'Criando execução...' : 'Executar agora'}
++              </button>
++            </div>
++          </div>
++        </div>
++      ) : null}
++    </>
++  );
++}
+diff --git a/apps/web/src/features/schedules/schedules-table.tsx b/apps/web/src/features/schedules/schedules-table.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/schedules/schedules-table.tsx
+@@ -0,0 +1,109 @@
++'use client';
++
++import { useQuery } from '@tanstack/react-query';
++
++import { EmptyState } from '@/components/ui/empty-state';
++import { ErrorState } from '@/components/ui/error-state';
++import { StatusBadge } from '@/components/ui/status-badge';
++import { formatDateTime } from '@/lib/format-date';
++
++import { describeCron } from './cron';
++import { automationSchedulesQueryOptions } from './queries';
++import { ScheduleActions } from './schedule-actions';
++
++function TableSkeleton() {
++  return (
++    <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
++      <div className="h-12 animate-pulse bg-[var(--surface-muted)]" />
++      {Array.from({ length: 4 }).map((_, index) => (
++        <div
++          key={index}
++          className="h-16 animate-pulse border-t border-[var(--border)] bg-white"
++        />
++      ))}
++    </div>
++  );
++}
++
++export function SchedulesTable() {
++  const schedulesQuery = useQuery(automationSchedulesQueryOptions);
++
++  if (schedulesQuery.isPending) {
++    return <TableSkeleton />;
++  }
++
++  if (schedulesQuery.isError) {
++    return (
++      <ErrorState
++        message={schedulesQuery.error.message}
++        onRetry={() => void schedulesQuery.refetch()}
++      />
++    );
++  }
++
++  const schedules = schedulesQuery.data;
++
++  if (schedules.length === 0) {
++    return (
++      <EmptyState
++        title="Nenhum agendamento cadastrado"
++        description="Crie o primeiro agendamento escolhendo a empresa, o ambiente WinThor, a rotina, o dia e o horário."
++      />
++    );
++  }
++
++  return (
++    <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-white">
++      <table className="min-w-full divide-y divide-[var(--border)] text-sm">
++        <thead className="bg-[var(--surface-muted)] text-left text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
++          <tr>
++            <th className="px-5 py-3">Empresa / Ambiente</th>
++            <th className="px-5 py-3">Agendamento</th>
++            <th className="px-5 py-3">Rotina</th>
++            <th className="px-5 py-3">Recorrência</th>
++            <th className="px-5 py-3">Próxima execução</th>
++            <th className="px-5 py-3">Última execução</th>
++            <th className="px-5 py-3">Status</th>
++            <th className="px-5 py-3 text-right">Ações</th>
++          </tr>
++        </thead>
++        <tbody className="divide-y divide-[var(--border)]">
++          {schedules.map((schedule) => (
++            <tr key={schedule.id} className="align-top">
++              <td className="px-5 py-4">
++                <div className="font-medium">
++                  {schedule.winthorInstance.company.name}
++                </div>
++                <div className="mt-1 text-xs text-[var(--muted)]">
++                  {schedule.winthorInstance.name}
++                </div>
++              </td>
++              <td className="px-5 py-4 font-medium">{schedule.name}</td>
++              <td className="px-5 py-4">
++                <span className="font-mono text-xs">{schedule.automationCode}</span>
++              </td>
++              <td className="px-5 py-4">
++                <div>{describeCron(schedule.cronExpression)}</div>
++                <div className="mt-1 font-mono text-xs text-[var(--muted)]">
++                  {schedule.timeZone}
++                </div>
++              </td>
++              <td className="whitespace-nowrap px-5 py-4 text-[var(--muted)]">
++                {formatDateTime(schedule.nextRunAt, schedule.timeZone)}
++              </td>
++              <td className="whitespace-nowrap px-5 py-4 text-[var(--muted)]">
++                {formatDateTime(schedule.lastRunAt, schedule.timeZone)}
++              </td>
++              <td className="px-5 py-4">
++                <StatusBadge active={schedule.enabled} />
++              </td>
++              <td className="px-5 py-4 text-right">
++                <ScheduleActions schedule={schedule} />
++              </td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </div>
++  );
++}

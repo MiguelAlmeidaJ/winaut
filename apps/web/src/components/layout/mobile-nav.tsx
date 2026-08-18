@@ -8,6 +8,7 @@ const items = [
   { href: '/companies', label: 'Empresas' },
   { href: '/winthor-instances', label: 'Ambientes WinThor' },
   { href: '/agents', label: 'Agents' },
+  { href: '/schedules', label: 'Agendamentos' },
 ] as const;
 
 export function MobileNav() {

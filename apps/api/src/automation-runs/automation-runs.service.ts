@@ -49,7 +49,7 @@ export class AutomationRunsService {
     this.logger.log(
       `Manual run created: ${run.id} (${schedule.automationCode})`,
     );
-    return run;
+    return this.findOne(run.id);
   }
 
   async findOne(id: string) {

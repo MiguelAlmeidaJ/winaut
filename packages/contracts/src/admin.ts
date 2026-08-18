@@ -151,6 +151,23 @@ export interface RevokeAgentCredentialResponse {
   credentialId: string;
 }
 
+
+export interface CreateAutomationScheduleInput {
+  winthorInstanceId: string;
+  automationCode: string;
+  name: string;
+  enabled?: boolean;
+  timeZone: string;
+  cronExpression: string;
+}
+
+export interface UpdateAutomationScheduleInput {
+  name?: string;
+  enabled?: boolean;
+  timeZone?: string;
+  cronExpression?: string;
+}
+
 export interface AutomationScheduleListItem {
   id: string;
   winthorInstanceId: string;
