@@ -9,14 +9,14 @@ interface NavigationItem {
   disabled?: boolean;
 }
 
-const items = [
+const items: readonly NavigationItem[] = [
   { href: '/', label: 'Dashboard' },
   { href: '/companies', label: 'Empresas' },
   { href: '/winthor-instances', label: 'Ambientes WinThor' },
   { href: '/agents', label: 'Agents' },
   { href: '/schedules', label: 'Agendamentos' },
   { href: '/runs', label: 'Execuções' },
-] satisfies readonly NavigationItem[];
+];
 
 function isActive(pathname: string, href: string): boolean {
   return href === '/' ? pathname === '/' : pathname.startsWith(href);

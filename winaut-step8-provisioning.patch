@@ -1,0 +1,1468 @@
+diff --git a/apps/web/src/app/companies/[id]/page.tsx b/apps/web/src/app/companies/[id]/page.tsx
+new file mode 100644
+index 0000000..49f5a82
+--- /dev/null
++++ b/apps/web/src/app/companies/[id]/page.tsx
+@@ -0,0 +1,13 @@
++import { CompanyDetailView } from '@/features/companies/company-detail-view';
++
++interface CompanyDetailPageProps {
++  params: Promise<{ id: string }>;
++}
++
++export default async function CompanyDetailPage({
++  params,
++}: CompanyDetailPageProps) {
++  const { id } = await params;
++
++  return <CompanyDetailView companyId={id} />;
++}
+diff --git a/apps/web/src/app/companies/page.tsx b/apps/web/src/app/companies/page.tsx
+index 8afc6ec..3178315 100644
+--- a/apps/web/src/app/companies/page.tsx
++++ b/apps/web/src/app/companies/page.tsx
+@@ -1,5 +1,6 @@
+ import { PageHeader } from '@/components/ui/page-header';
+ import { CompaniesTable } from '@/features/companies/companies-table';
++import { CreateCompanyDialog } from '@/features/companies/create-company-dialog';
+ 
+ export default function CompaniesPage() {
+   return (
+@@ -7,6 +8,7 @@ export default function CompaniesPage() {
+       <PageHeader
+         title="Empresas"
+         description="Empresas clientes e quantidade de ambientes WinThor associados."
++        action={<CreateCompanyDialog />}
+       />
+       <CompaniesTable />
+     </>
+diff --git a/apps/web/src/app/winthor-instances/page.tsx b/apps/web/src/app/winthor-instances/page.tsx
+index af0c45f..3fe3074 100644
+--- a/apps/web/src/app/winthor-instances/page.tsx
++++ b/apps/web/src/app/winthor-instances/page.tsx
+@@ -1,4 +1,5 @@
+ import { PageHeader } from '@/components/ui/page-header';
++import { CreateWinThorInstanceDialog } from '@/features/winthor-instances/create-winthor-instance-dialog';
+ import { WinThorInstancesTable } from '@/features/winthor-instances/winthor-instances-table';
+ 
+ export default function WinThorInstancesPage() {
+@@ -7,6 +8,7 @@ export default function WinThorInstancesPage() {
+       <PageHeader
+         title="Ambientes WinThor"
+         description="Ambientes lógicos WinThor por empresa, modo de execução e disponibilidade dos Agents."
++        action={<CreateWinThorInstanceDialog />}
+       />
+       <WinThorInstancesTable />
+     </>
+diff --git a/apps/web/src/features/companies/companies-table.tsx b/apps/web/src/features/companies/companies-table.tsx
+index 897121d..2618685 100644
+--- a/apps/web/src/features/companies/companies-table.tsx
++++ b/apps/web/src/features/companies/companies-table.tsx
+@@ -1,6 +1,7 @@
+ 'use client';
+ 
+ import { useQuery } from '@tanstack/react-query';
++import Link from 'next/link';
+ 
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { ErrorState } from '@/components/ui/error-state';
+@@ -43,7 +44,7 @@ export function CompaniesTable() {
+     return (
+       <EmptyState
+         title="Nenhuma empresa cadastrada"
+-        description="Cadastre a primeira empresa pela API nesta etapa. A criação pelo painel será adicionada na próxima evolução da tela."
++        description="Cadastre a primeira empresa para iniciar o provisionamento de ambientes WinThor."
+       />
+     );
+   }
+@@ -64,7 +65,12 @@ export function CompaniesTable() {
+             {query.data.map((company) => (
+               <tr key={company.id} className="hover:bg-slate-50/70">
+                 <td className="px-5 py-4 font-medium text-[var(--foreground)]">
+-                  {company.name}
++                  <Link
++                    href={`/companies/${company.id}`}
++                    className="hover:text-[var(--accent)] hover:underline"
++                  >
++                    {company.name}
++                  </Link>
+                 </td>
+                 <td className="px-5 py-4 text-[var(--muted)]">
+                   {company.document || '—'}
+diff --git a/apps/web/src/features/companies/company-detail-view.tsx b/apps/web/src/features/companies/company-detail-view.tsx
+new file mode 100644
+index 0000000..0601d3d
+--- /dev/null
++++ b/apps/web/src/features/companies/company-detail-view.tsx
+@@ -0,0 +1,140 @@
++'use client';
++
++import { useQuery } from '@tanstack/react-query';
++import Link from 'next/link';
++
++import { EmptyState } from '@/components/ui/empty-state';
++import { ErrorState } from '@/components/ui/error-state';
++import { StatusBadge } from '@/components/ui/status-badge';
++import { CreateWinThorInstanceDialog } from '@/features/winthor-instances/create-winthor-instance-dialog';
++import {
++  formatExecutionMode,
++  formatHostingType,
++} from '@/features/winthor-instances/formatters';
++
++import { companyQueryOptions } from './queries';
++
++interface CompanyDetailViewProps {
++  companyId: string;
++}
++
++export function CompanyDetailView({ companyId }: CompanyDetailViewProps) {
++  const query = useQuery(companyQueryOptions(companyId));
++
++  if (query.isPending) {
++    return (
++      <div className="space-y-5">
++        <div className="h-5 w-32 animate-pulse rounded bg-[var(--surface-muted)]" />
++        <div className="h-24 animate-pulse rounded-xl bg-[var(--surface-muted)]" />
++        <div className="h-56 animate-pulse rounded-xl bg-[var(--surface-muted)]" />
++      </div>
++    );
++  }
++
++  if (query.isError) {
++    return (
++      <div className="space-y-4">
++        <BackToCompanies />
++        <ErrorState
++          message={query.error.message}
++          onRetry={() => void query.refetch()}
++        />
++      </div>
++    );
++  }
++
++  const company = query.data;
++
++  return (
++    <div className="space-y-6">
++      <BackToCompanies />
++
++      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
++        <div>
++          <p className="text-sm font-medium text-[var(--muted)]">Empresa</p>
++          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
++            {company.name}
++          </h1>
++          <p className="mt-1 text-sm text-[var(--muted)]">
++            {company.document || 'Documento não informado'}
++          </p>
++        </div>
++        <StatusBadge active={company.active} />
++      </div>
++
++      <section className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
++        <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
++          <div>
++            <h2 className="text-base font-semibold">Ambientes WinThor</h2>
++            <p className="mt-1 text-sm text-[var(--muted)]">
++              Ambientes lógicos pertencentes exclusivamente a esta empresa.
++            </p>
++          </div>
++          {company.active ? (
++            <CreateWinThorInstanceDialog initialCompanyId={company.id} />
++          ) : null}
++        </div>
++
++        {company.winthorInstances.length === 0 ? (
++          <div className="p-5">
++            <EmptyState
++              title="Nenhum ambiente WinThor"
++              description="Cadastre o primeiro ambiente desta empresa para continuar o provisionamento."
++            />
++          </div>
++        ) : (
++          <div className="overflow-x-auto">
++            <table className="min-w-full divide-y divide-[var(--border)] text-sm">
++              <thead className="bg-[var(--surface-muted)] text-left text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
++                <tr>
++                  <th className="px-5 py-3">Ambiente</th>
++                  <th className="px-5 py-3">Hospedagem</th>
++                  <th className="px-5 py-3">Execução</th>
++                  <th className="px-5 py-3">Timezone</th>
++                  <th className="px-5 py-3">Status</th>
++                </tr>
++              </thead>
++              <tbody className="divide-y divide-[var(--border)]">
++                {company.winthorInstances.map((instance) => (
++                  <tr key={instance.id}>
++                    <td className="px-5 py-4 font-medium">
++                      <Link
++                        href={`/winthor-instances/${instance.id}`}
++                        className="hover:text-[var(--accent)] hover:underline"
++                      >
++                        {instance.name}
++                      </Link>
++                    </td>
++                    <td className="px-5 py-4 text-[var(--muted)]">
++                      {formatHostingType(instance.hostingType)}
++                    </td>
++                    <td className="px-5 py-4 text-[var(--muted)]">
++                      {formatExecutionMode(instance.executionMode)}
++                    </td>
++                    <td className="px-5 py-4 font-mono text-xs text-[var(--muted)]">
++                      {instance.timeZone}
++                    </td>
++                    <td className="px-5 py-4">
++                      <StatusBadge active={instance.active} />
++                    </td>
++                  </tr>
++                ))}
++              </tbody>
++            </table>
++          </div>
++        )}
++      </section>
++    </div>
++  );
++}
++
++function BackToCompanies() {
++  return (
++    <Link
++      href="/companies"
++      className="inline-flex text-sm font-medium text-[var(--accent)] hover:underline"
++    >
++      ← Voltar para Empresas
++    </Link>
++  );
++}
+diff --git a/apps/web/src/features/companies/create-company-dialog.tsx b/apps/web/src/features/companies/create-company-dialog.tsx
+new file mode 100644
+index 0000000..7d58ade
+--- /dev/null
++++ b/apps/web/src/features/companies/create-company-dialog.tsx
+@@ -0,0 +1,133 @@
++'use client';
++
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import type { FormEvent } from 'react';
++import { useState } from 'react';
++
++import { apiClient } from '@/lib/api/client';
++
++import { companyKeys } from './queries';
++
++export function CreateCompanyDialog() {
++  const queryClient = useQueryClient();
++  const [open, setOpen] = useState(false);
++  const [name, setName] = useState('');
++  const [document, setDocument] = useState('');
++  const [active, setActive] = useState(true);
++
++  const mutation = useMutation({
++    mutationFn: () =>
++      apiClient.createCompany({
++        name: name.trim(),
++        ...(document.trim() ? { document: document.trim() } : {}),
++        active,
++      }),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: companyKeys.all });
++      close();
++    },
++  });
++
++  function close() {
++    setOpen(false);
++    setName('');
++    setDocument('');
++    setActive(true);
++    mutation.reset();
++  }
++
++  function submit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++    if (!name.trim()) return;
++    mutation.mutate();
++  }
++
++  return (
++    <>
++      <button
++        type="button"
++        onClick={() => setOpen(true)}
++        className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
++      >
++        Nova empresa
++      </button>
++
++      {open ? (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
++          <div
++            role="dialog"
++            aria-modal="true"
++            aria-labelledby="create-company-title"
++            className="w-full max-w-lg rounded-xl border border-[var(--border)] bg-white p-6 shadow-xl"
++          >
++            <h2 id="create-company-title" className="text-lg font-semibold">
++              Nova empresa
++            </h2>
++            <p className="mt-1 text-sm text-[var(--muted)]">
++              Cadastre a empresa cliente que será proprietária dos ambientes WinThor.
++            </p>
++
++            <form className="mt-6 space-y-4" onSubmit={submit}>
++              <label className="block text-sm font-medium">
++                Nome
++                <input
++                  required
++                  maxLength={150}
++                  value={name}
++                  onChange={(event) => setName(event.target.value)}
++                  placeholder="Distribuidora ABC"
++                  className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                />
++              </label>
++
++              <label className="block text-sm font-medium">
++                Documento
++                <input
++                  maxLength={30}
++                  value={document}
++                  onChange={(event) => setDocument(event.target.value)}
++                  placeholder="CNPJ ou identificador"
++                  className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                />
++              </label>
++
++              <label className="flex items-center gap-2 text-sm font-medium">
++                <input
++                  type="checkbox"
++                  checked={active}
++                  onChange={(event) => setActive(event.target.checked)}
++                  className="h-4 w-4"
++                />
++                Empresa ativa
++              </label>
++
++              {mutation.isError ? (
++                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
++                  {mutation.error.message}
++                </div>
++              ) : null}
++
++              <div className="flex justify-end gap-2 pt-2">
++                <button
++                  type="button"
++                  onClick={close}
++                  disabled={mutation.isPending}
++                  className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++                >
++                  Cancelar
++                </button>
++                <button
++                  type="submit"
++                  disabled={mutation.isPending}
++                  className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
++                >
++                  {mutation.isPending ? 'Salvando...' : 'Cadastrar empresa'}
++                </button>
++              </div>
++            </form>
++          </div>
++        </div>
++      ) : null}
++    </>
++  );
++}
+diff --git a/apps/web/src/features/companies/queries.ts b/apps/web/src/features/companies/queries.ts
+index 201663a..0e6b104 100644
+--- a/apps/web/src/features/companies/queries.ts
++++ b/apps/web/src/features/companies/queries.ts
+@@ -4,9 +4,17 @@ import { apiClient } from '@/lib/api/client';
+ 
+ export const companyKeys = {
+   all: ['companies'] as const,
++  detail: (id: string) => ['companies', id] as const,
+ };
+ 
+ export const companiesQueryOptions = queryOptions({
+   queryKey: companyKeys.all,
+   queryFn: () => apiClient.getCompanies(),
+ });
++
++export function companyQueryOptions(id: string) {
++  return queryOptions({
++    queryKey: companyKeys.detail(id),
++    queryFn: () => apiClient.getCompany(id),
++  });
++}
+diff --git a/apps/web/src/features/winthor-instances/create-winthor-instance-dialog.tsx b/apps/web/src/features/winthor-instances/create-winthor-instance-dialog.tsx
+new file mode 100644
+index 0000000..26b2951
+--- /dev/null
++++ b/apps/web/src/features/winthor-instances/create-winthor-instance-dialog.tsx
+@@ -0,0 +1,255 @@
++'use client';
++
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import type {
++  WinThorExecutionMode,
++  WinThorHostingType,
++} from '@winaut/contracts';
++import type { FormEvent } from 'react';
++import { useState } from 'react';
++
++import { companiesQueryOptions, companyKeys } from '@/features/companies/queries';
++import { apiClient } from '@/lib/api/client';
++
++import { executionModeOptions, hostingTypeOptions } from './options';
++import { winThorInstanceKeys } from './queries';
++
++interface CreateWinThorInstanceDialogProps {
++  initialCompanyId?: string;
++}
++
++export function CreateWinThorInstanceDialog({
++  initialCompanyId,
++}: CreateWinThorInstanceDialogProps) {
++  const queryClient = useQueryClient();
++  const [open, setOpen] = useState(false);
++  const [companyId, setCompanyId] = useState(initialCompanyId ?? '');
++  const [name, setName] = useState('');
++  const [active, setActive] = useState(true);
++  const [timeZone, setTimeZone] = useState('America/Sao_Paulo');
++  const [hostingType, setHostingType] =
++    useState<WinThorHostingType>('ON_PREMISE');
++  const [executionMode, setExecutionMode] =
++    useState<WinThorExecutionMode>('LOCAL_WINDOWS');
++
++  const companiesQuery = useQuery({
++    ...companiesQueryOptions,
++    enabled: open,
++  });
++
++  const activeCompanies =
++    companiesQuery.data?.filter((company) => company.active) ?? [];
++
++  const mutation = useMutation({
++    mutationFn: () =>
++      apiClient.createWinThorInstance({
++        companyId,
++        name: name.trim(),
++        active,
++        timeZone: timeZone.trim(),
++        hostingType,
++        executionMode,
++      }),
++    onSuccess: async (created) => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: winThorInstanceKeys.all }),
++        queryClient.invalidateQueries({ queryKey: companyKeys.all }),
++        queryClient.invalidateQueries({
++          queryKey: companyKeys.detail(created.company.id),
++        }),
++      ]);
++      close();
++    },
++  });
++
++  function close() {
++    setOpen(false);
++    setCompanyId(initialCompanyId ?? '');
++    setName('');
++    setActive(true);
++    setTimeZone('America/Sao_Paulo');
++    setHostingType('ON_PREMISE');
++    setExecutionMode('LOCAL_WINDOWS');
++    mutation.reset();
++  }
++
++  function submit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++    if (!companyId || !name.trim() || !timeZone.trim()) return;
++    mutation.mutate();
++  }
++
++  return (
++    <>
++      <button
++        type="button"
++        onClick={() => setOpen(true)}
++        className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
++      >
++        Novo ambiente
++      </button>
++
++      {open ? (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
++          <div
++            role="dialog"
++            aria-modal="true"
++            aria-labelledby="create-winthor-instance-title"
++            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-6 shadow-xl"
++          >
++            <h2
++              id="create-winthor-instance-title"
++              className="text-lg font-semibold"
++            >
++              Novo ambiente WinThor
++            </h2>
++            <p className="mt-1 text-sm text-[var(--muted)]">
++              Hospedagem e modo de execução são conceitos independentes.
++            </p>
++
++            {companiesQuery.isPending ? (
++              <div className="mt-6 h-44 animate-pulse rounded-lg bg-[var(--surface-muted)]" />
++            ) : companiesQuery.isError ? (
++              <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
++                {companiesQuery.error.message}
++              </div>
++            ) : activeCompanies.length === 0 ? (
++              <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
++                Cadastre ou ative uma empresa antes de criar um ambiente WinThor.
++              </div>
++            ) : (
++              <form className="mt-6 space-y-4" onSubmit={submit}>
++                <label className="block text-sm font-medium">
++                  Empresa
++                  <select
++                    required
++                    disabled={Boolean(initialCompanyId)}
++                    value={companyId}
++                    onChange={(event) => setCompanyId(event.target.value)}
++                    className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)] disabled:bg-[var(--surface-muted)]"
++                  >
++                    <option value="">Selecione uma empresa</option>
++                    {activeCompanies.map((company) => (
++                      <option key={company.id} value={company.id}>
++                        {company.name}
++                      </option>
++                    ))}
++                  </select>
++                </label>
++
++                <label className="block text-sm font-medium">
++                  Nome do ambiente
++                  <input
++                    required
++                    maxLength={150}
++                    value={name}
++                    onChange={(event) => setName(event.target.value)}
++                    placeholder="WinThor Produção"
++                    className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                  />
++                </label>
++
++                <div className="grid gap-4 md:grid-cols-2">
++                  <label className="block text-sm font-medium">
++                    Hospedagem
++                    <select
++                      value={hostingType}
++                      onChange={(event) =>
++                        setHostingType(event.target.value as WinThorHostingType)
++                      }
++                      className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                    >
++                      {hostingTypeOptions.map((option) => (
++                        <option key={option.value} value={option.value}>
++                          {option.label}
++                        </option>
++                      ))}
++                    </select>
++                  </label>
++
++                  <label className="block text-sm font-medium">
++                    Modo de execução
++                    <select
++                      value={executionMode}
++                      onChange={(event) =>
++                        setExecutionMode(
++                          event.target.value as WinThorExecutionMode,
++                        )
++                      }
++                      className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                    >
++                      {executionModeOptions.map((option) => (
++                        <option key={option.value} value={option.value}>
++                          {option.label}
++                        </option>
++                      ))}
++                    </select>
++                  </label>
++                </div>
++
++                <label className="block text-sm font-medium">
++                  Timezone IANA
++                  <input
++                    required
++                    maxLength={100}
++                    value={timeZone}
++                    onChange={(event) => setTimeZone(event.target.value)}
++                    placeholder="America/Sao_Paulo"
++                    className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 font-mono text-sm outline-none focus:border-[var(--accent)]"
++                  />
++                </label>
++
++                <label className="flex items-center gap-2 text-sm font-medium">
++                  <input
++                    type="checkbox"
++                    checked={active}
++                    onChange={(event) => setActive(event.target.checked)}
++                    className="h-4 w-4"
++                  />
++                  Ambiente ativo
++                </label>
++
++                {mutation.isError ? (
++                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
++                    {mutation.error.message}
++                  </div>
++                ) : null}
++
++                <div className="flex justify-end gap-2 pt-2">
++                  <button
++                    type="button"
++                    onClick={close}
++                    disabled={mutation.isPending}
++                    className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++                  >
++                    Cancelar
++                  </button>
++                  <button
++                    type="submit"
++                    disabled={mutation.isPending}
++                    className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
++                  >
++                    {mutation.isPending ? 'Salvando...' : 'Criar ambiente'}
++                  </button>
++                </div>
++              </form>
++            )}
++
++            {!companiesQuery.isPending &&
++            (companiesQuery.isError || activeCompanies.length === 0) ? (
++              <div className="mt-5 flex justify-end">
++                <button
++                  type="button"
++                  onClick={close}
++                  className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)]"
++                >
++                  Fechar
++                </button>
++              </div>
++            ) : null}
++          </div>
++        </div>
++      ) : null}
++    </>
++  );
++}
+diff --git a/apps/web/src/features/winthor-instances/detail/access-profile-dialog.tsx b/apps/web/src/features/winthor-instances/detail/access-profile-dialog.tsx
+new file mode 100644
+index 0000000..711f08a
+--- /dev/null
++++ b/apps/web/src/features/winthor-instances/detail/access-profile-dialog.tsx
+@@ -0,0 +1,239 @@
++'use client';
++
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import type {
++  WinThorAccessProfileItem,
++  WinThorExecutionMode,
++} from '@winaut/contracts';
++import type { FormEvent } from 'react';
++import { useState } from 'react';
++
++import { apiClient } from '@/lib/api/client';
++
++import { executionModeOptions } from '../options';
++import { winThorInstanceKeys } from '../queries';
++
++interface AccessProfileDialogProps {
++  winthorInstanceId: string;
++  defaultType: WinThorExecutionMode;
++  profile?: WinThorAccessProfileItem;
++  triggerLabel?: string;
++}
++
++export function AccessProfileDialog({
++  winthorInstanceId,
++  defaultType,
++  profile,
++  triggerLabel = 'Novo perfil',
++}: AccessProfileDialogProps) {
++  const queryClient = useQueryClient();
++  const [open, setOpen] = useState(false);
++  const [type, setType] = useState<WinThorExecutionMode>(
++    profile?.type ?? defaultType,
++  );
++  const [endpoint, setEndpoint] = useState(profile?.endpoint ?? '');
++  const [applicationName, setApplicationName] = useState(
++    profile?.applicationName ?? '',
++  );
++  const [username, setUsername] = useState(profile?.username ?? '');
++  const [secretReference, setSecretReference] = useState(
++    profile?.secretReference ?? '',
++  );
++  const [enabled, setEnabled] = useState(profile?.enabled ?? true);
++
++  const mutation = useMutation({
++    mutationFn: () => {
++      if (profile) {
++        return apiClient.updateWinThorAccessProfile(profile.id, {
++          type,
++          endpoint: endpoint.trim() || null,
++          applicationName: applicationName.trim() || null,
++          username: username.trim() || null,
++          secretReference: secretReference.trim() || null,
++          enabled,
++        });
++      }
++
++      return apiClient.createWinThorAccessProfile({
++        winthorInstanceId,
++        type,
++        ...(endpoint.trim() ? { endpoint: endpoint.trim() } : {}),
++        ...(applicationName.trim()
++          ? { applicationName: applicationName.trim() }
++          : {}),
++        ...(username.trim() ? { username: username.trim() } : {}),
++        ...(secretReference.trim()
++          ? { secretReference: secretReference.trim() }
++          : {}),
++        enabled,
++      });
++    },
++    onSuccess: async () => {
++      await Promise.all([
++        queryClient.invalidateQueries({
++          queryKey: winThorInstanceKeys.detail(winthorInstanceId),
++        }),
++        queryClient.invalidateQueries({ queryKey: winThorInstanceKeys.all }),
++      ]);
++      setOpen(false);
++    },
++  });
++
++  function openDialog() {
++    setType(profile?.type ?? defaultType);
++    setEndpoint(profile?.endpoint ?? '');
++    setApplicationName(profile?.applicationName ?? '');
++    setUsername(profile?.username ?? '');
++    setSecretReference(profile?.secretReference ?? '');
++    setEnabled(profile?.enabled ?? true);
++    mutation.reset();
++    setOpen(true);
++  }
++
++  function submit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++    mutation.mutate();
++  }
++
++  return (
++    <>
++      <button
++        type="button"
++        onClick={openDialog}
++        className={
++          profile
++            ? 'text-sm font-medium text-[var(--accent)] hover:underline'
++            : 'rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium hover:bg-[var(--surface-muted)]'
++        }
++      >
++        {triggerLabel}
++      </button>
++
++      {open ? (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
++          <div
++            role="dialog"
++            aria-modal="true"
++            aria-labelledby="access-profile-title"
++            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-6 shadow-xl"
++          >
++            <h2 id="access-profile-title" className="text-lg font-semibold">
++              {profile ? 'Editar perfil de acesso' : 'Novo perfil de acesso'}
++            </h2>
++            <p className="mt-1 text-sm text-[var(--muted)]">
++              Informe somente metadata de conexão. Não coloque senha, token ou
++              outro segredo em plaintext.
++            </p>
++
++            <form className="mt-6 space-y-4" onSubmit={submit}>
++              <label className="block text-sm font-medium">
++                Tipo
++                <select
++                  value={type}
++                  onChange={(event) =>
++                    setType(event.target.value as WinThorExecutionMode)
++                  }
++                  className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                >
++                  {executionModeOptions.map((option) => (
++                    <option key={option.value} value={option.value}>
++                      {option.label}
++                    </option>
++                  ))}
++                </select>
++              </label>
++
++              <label className="block text-sm font-medium">
++                Endpoint
++                <input
++                  maxLength={500}
++                  value={endpoint}
++                  onChange={(event) => setEndpoint(event.target.value)}
++                  placeholder="Servidor, URL ou endpoint de acesso"
++                  className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                />
++              </label>
++
++              <div className="grid gap-4 md:grid-cols-2">
++                <label className="block text-sm font-medium">
++                  Aplicação
++                  <input
++                    maxLength={150}
++                    value={applicationName}
++                    onChange={(event) => setApplicationName(event.target.value)}
++                    placeholder="WinThor"
++                    className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                  />
++                </label>
++
++                <label className="block text-sm font-medium">
++                  Usuário
++                  <input
++                    maxLength={255}
++                    value={username}
++                    onChange={(event) => setUsername(event.target.value)}
++                    placeholder="Metadata do usuário"
++                    className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                  />
++                </label>
++              </div>
++
++              <label className="block text-sm font-medium">
++                Secret reference
++                <input
++                  maxLength={500}
++                  value={secretReference}
++                  onChange={(event) => setSecretReference(event.target.value)}
++                  placeholder="windows-credential-manager://..."
++                  className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 font-mono text-sm outline-none focus:border-[var(--accent)]"
++                />
++                <span className="mt-1 block text-xs font-normal text-[var(--muted)]">
++                  Esta referência deve apontar para um segredo armazenado fora do
++                  frontend. Não informe o valor secreto.
++                </span>
++              </label>
++
++              <label className="flex items-center gap-2 text-sm font-medium">
++                <input
++                  type="checkbox"
++                  checked={enabled}
++                  onChange={(event) => setEnabled(event.target.checked)}
++                  className="h-4 w-4"
++                />
++                Perfil ativo
++              </label>
++
++              {mutation.isError ? (
++                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
++                  {mutation.error.message}
++                </div>
++              ) : null}
++
++              <div className="flex justify-end gap-2 pt-2">
++                <button
++                  type="button"
++                  onClick={() => setOpen(false)}
++                  disabled={mutation.isPending}
++                  className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++                >
++                  Cancelar
++                </button>
++                <button
++                  type="submit"
++                  disabled={mutation.isPending}
++                  className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
++                >
++                  {mutation.isPending
++                    ? 'Salvando...'
++                    : profile
++                      ? 'Salvar alterações'
++                      : 'Criar perfil'}
++                </button>
++              </div>
++            </form>
++          </div>
++        </div>
++      ) : null}
++    </>
++  );
++}
+diff --git a/apps/web/src/features/winthor-instances/detail/access-profiles-section.tsx b/apps/web/src/features/winthor-instances/detail/access-profiles-section.tsx
+index fbed31a..2d83ec0 100644
+--- a/apps/web/src/features/winthor-instances/detail/access-profiles-section.tsx
++++ b/apps/web/src/features/winthor-instances/detail/access-profiles-section.tsx
+@@ -1,9 +1,15 @@
+-import type { WinThorAccessProfileItem } from '@winaut/contracts';
++'use client';
++
++import type {
++  WinThorAccessProfileItem,
++  WinThorExecutionMode,
++} from '@winaut/contracts';
+ 
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { StatusBadge } from '@/components/ui/status-badge';
+ 
+ import { formatExecutionMode } from '../formatters';
++import { AccessProfileDialog } from './access-profile-dialog';
+ import { DetailSection } from './detail-section';
+ 
+ function valueOrDash(value: string | null): string {
+@@ -11,16 +17,26 @@ function valueOrDash(value: string | null): string {
+ }
+ 
+ interface AccessProfilesSectionProps {
++  winthorInstanceId: string;
++  defaultType: WinThorExecutionMode;
+   profiles: WinThorAccessProfileItem[];
+ }
+ 
+ export function AccessProfilesSection({
++  winthorInstanceId,
++  defaultType,
+   profiles,
+ }: AccessProfilesSectionProps) {
+   return (
+     <DetailSection
+       title="Perfis de acesso"
+       description="Somente metadados seguros de conexão. Nenhum segredo em plaintext é exibido."
++      action={
++        <AccessProfileDialog
++          winthorInstanceId={winthorInstanceId}
++          defaultType={defaultType}
++        />
++      }
+     >
+       {profiles.length === 0 ? (
+         <div className="p-5">
+@@ -40,6 +56,7 @@ export function AccessProfilesSection({
+                 <th className="px-5 py-3">Usuário</th>
+                 <th className="px-5 py-3">Secret reference</th>
+                 <th className="px-5 py-3">Status</th>
++                <th className="px-5 py-3 text-right">Ações</th>
+               </tr>
+             </thead>
+             <tbody className="divide-y divide-[var(--border)]">
+@@ -63,6 +80,14 @@ export function AccessProfilesSection({
+                   <td className="px-5 py-4">
+                     <StatusBadge active={profile.enabled} />
+                   </td>
++                  <td className="px-5 py-4 text-right">
++                    <AccessProfileDialog
++                      winthorInstanceId={winthorInstanceId}
++                      defaultType={defaultType}
++                      profile={profile}
++                      triggerLabel="Editar"
++                    />
++                  </td>
+                 </tr>
+               ))}
+             </tbody>
+diff --git a/apps/web/src/features/winthor-instances/detail/detail-section.tsx b/apps/web/src/features/winthor-instances/detail/detail-section.tsx
+index ecee6d1..f5aa870 100644
+--- a/apps/web/src/features/winthor-instances/detail/detail-section.tsx
++++ b/apps/web/src/features/winthor-instances/detail/detail-section.tsx
+@@ -1,19 +1,24 @@
+ interface DetailSectionProps {
+   title: string;
+   description: string;
++  action?: React.ReactNode;
+   children: React.ReactNode;
+ }
+ 
+ export function DetailSection({
+   title,
+   description,
++  action,
+   children,
+ }: DetailSectionProps) {
+   return (
+     <section className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
+-      <div className="border-b border-[var(--border)] px-5 py-4">
+-        <h2 className="text-base font-semibold">{title}</h2>
+-        <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
++      <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
++        <div>
++          <h2 className="text-base font-semibold">{title}</h2>
++          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
++        </div>
++        {action ? <div className="shrink-0">{action}</div> : null}
+       </div>
+       {children}
+     </section>
+diff --git a/apps/web/src/features/winthor-instances/edit-winthor-instance-dialog.tsx b/apps/web/src/features/winthor-instances/edit-winthor-instance-dialog.tsx
+new file mode 100644
+index 0000000..1460f54
+--- /dev/null
++++ b/apps/web/src/features/winthor-instances/edit-winthor-instance-dialog.tsx
+@@ -0,0 +1,197 @@
++'use client';
++
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import type {
++  WinThorExecutionMode,
++  WinThorHostingType,
++  WinThorInstanceDetail,
++} from '@winaut/contracts';
++import type { FormEvent } from 'react';
++import { useState } from 'react';
++
++import { companyKeys } from '@/features/companies/queries';
++import { apiClient } from '@/lib/api/client';
++
++import { executionModeOptions, hostingTypeOptions } from './options';
++import { winThorInstanceKeys } from './queries';
++
++interface EditWinThorInstanceDialogProps {
++  instance: WinThorInstanceDetail;
++}
++
++export function EditWinThorInstanceDialog({
++  instance,
++}: EditWinThorInstanceDialogProps) {
++  const queryClient = useQueryClient();
++  const [open, setOpen] = useState(false);
++  const [name, setName] = useState(instance.name);
++  const [active, setActive] = useState(instance.active);
++  const [timeZone, setTimeZone] = useState(instance.timeZone);
++  const [hostingType, setHostingType] =
++    useState<WinThorHostingType>(instance.hostingType);
++  const [executionMode, setExecutionMode] =
++    useState<WinThorExecutionMode>(instance.executionMode);
++
++  const mutation = useMutation({
++    mutationFn: () =>
++      apiClient.updateWinThorInstance(instance.id, {
++        name: name.trim(),
++        active,
++        timeZone: timeZone.trim(),
++        hostingType,
++        executionMode,
++      }),
++    onSuccess: async () => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: winThorInstanceKeys.all }),
++        queryClient.invalidateQueries({
++          queryKey: winThorInstanceKeys.detail(instance.id),
++        }),
++        queryClient.invalidateQueries({
++          queryKey: companyKeys.detail(instance.company.id),
++        }),
++      ]);
++      setOpen(false);
++    },
++  });
++
++  function openDialog() {
++    setName(instance.name);
++    setActive(instance.active);
++    setTimeZone(instance.timeZone);
++    setHostingType(instance.hostingType);
++    setExecutionMode(instance.executionMode);
++    mutation.reset();
++    setOpen(true);
++  }
++
++  function submit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++    if (!name.trim() || !timeZone.trim()) return;
++    mutation.mutate();
++  }
++
++  return (
++    <>
++      <button
++        type="button"
++        onClick={openDialog}
++        className="rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium hover:bg-[var(--surface-muted)]"
++      >
++        Editar ambiente
++      </button>
++
++      {open ? (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
++          <div
++            role="dialog"
++            aria-modal="true"
++            aria-labelledby="edit-winthor-instance-title"
++            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-6 shadow-xl"
++          >
++            <h2 id="edit-winthor-instance-title" className="text-lg font-semibold">
++              Editar ambiente WinThor
++            </h2>
++            <p className="mt-1 text-sm text-[var(--muted)]">
++              A empresa proprietária não pode ser alterada por este endpoint.
++            </p>
++
++            <form className="mt-6 space-y-4" onSubmit={submit}>
++              <label className="block text-sm font-medium">
++                Nome do ambiente
++                <input
++                  required
++                  maxLength={150}
++                  value={name}
++                  onChange={(event) => setName(event.target.value)}
++                  className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                />
++              </label>
++
++              <div className="grid gap-4 md:grid-cols-2">
++                <label className="block text-sm font-medium">
++                  Hospedagem
++                  <select
++                    value={hostingType}
++                    onChange={(event) =>
++                      setHostingType(event.target.value as WinThorHostingType)
++                    }
++                    className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                  >
++                    {hostingTypeOptions.map((option) => (
++                      <option key={option.value} value={option.value}>
++                        {option.label}
++                      </option>
++                    ))}
++                  </select>
++                </label>
++
++                <label className="block text-sm font-medium">
++                  Modo de execução
++                  <select
++                    value={executionMode}
++                    onChange={(event) =>
++                      setExecutionMode(event.target.value as WinThorExecutionMode)
++                    }
++                    className="mt-1 block w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
++                  >
++                    {executionModeOptions.map((option) => (
++                      <option key={option.value} value={option.value}>
++                        {option.label}
++                      </option>
++                    ))}
++                  </select>
++                </label>
++              </div>
++
++              <label className="block text-sm font-medium">
++                Timezone IANA
++                <input
++                  required
++                  maxLength={100}
++                  value={timeZone}
++                  onChange={(event) => setTimeZone(event.target.value)}
++                  className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 font-mono text-sm outline-none focus:border-[var(--accent)]"
++                />
++              </label>
++
++              <label className="flex items-center gap-2 text-sm font-medium">
++                <input
++                  type="checkbox"
++                  checked={active}
++                  onChange={(event) => setActive(event.target.checked)}
++                  className="h-4 w-4"
++                />
++                Ambiente ativo
++              </label>
++
++              {mutation.isError ? (
++                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
++                  {mutation.error.message}
++                </div>
++              ) : null}
++
++              <div className="flex justify-end gap-2 pt-2">
++                <button
++                  type="button"
++                  onClick={() => setOpen(false)}
++                  disabled={mutation.isPending}
++                  className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++                >
++                  Cancelar
++                </button>
++                <button
++                  type="submit"
++                  disabled={mutation.isPending}
++                  className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
++                >
++                  {mutation.isPending ? 'Salvando...' : 'Salvar alterações'}
++                </button>
++              </div>
++            </form>
++          </div>
++        </div>
++      ) : null}
++    </>
++  );
++}
+diff --git a/apps/web/src/features/winthor-instances/options.ts b/apps/web/src/features/winthor-instances/options.ts
+new file mode 100644
+index 0000000..a022949
+--- /dev/null
++++ b/apps/web/src/features/winthor-instances/options.ts
+@@ -0,0 +1,18 @@
++import type {
++  WinThorExecutionMode,
++  WinThorHostingType,
++} from '@winaut/contracts';
++
++export const hostingTypeOptions = [
++  { value: 'ON_PREMISE', label: 'On-premise' },
++  { value: 'TOTVS_CLOUD', label: 'TOTVS Cloud' },
++  { value: 'OTHER', label: 'Outro' },
++] satisfies readonly { value: WinThorHostingType; label: string }[];
++
++export const executionModeOptions = [
++  { value: 'LOCAL_WINDOWS', label: 'Windows local' },
++  { value: 'GO_GLOBAL', label: 'Go-Global' },
++  { value: 'RDP', label: 'RDP' },
++  { value: 'CITRIX', label: 'Citrix' },
++  { value: 'API', label: 'API' },
++] satisfies readonly { value: WinThorExecutionMode; label: string }[];
+diff --git a/apps/web/src/features/winthor-instances/winthor-instance-detail-view.tsx b/apps/web/src/features/winthor-instances/winthor-instance-detail-view.tsx
+index 08916b0..df80396 100644
+--- a/apps/web/src/features/winthor-instances/winthor-instance-detail-view.tsx
++++ b/apps/web/src/features/winthor-instances/winthor-instance-detail-view.tsx
+@@ -11,6 +11,7 @@ import { AccessProfilesSection } from './detail/access-profiles-section';
+ import { InstanceAgentsSection } from './detail/instance-agents-section';
+ import { InstanceSchedulesSection } from './detail/instance-schedules-section';
+ import { InstanceSummary } from './detail/instance-summary';
++import { EditWinThorInstanceDialog } from './edit-winthor-instance-dialog';
+ import { winThorInstanceQueryOptions } from './queries';
+ 
+ interface WinThorInstanceDetailViewProps {
+@@ -99,11 +100,18 @@ export function WinThorInstanceDetailView({
+             Visão operacional do ambiente, acessos, Agents e agendamentos.
+           </p>
+         </div>
+-        <StatusBadge active={instance.active} />
++        <div className="flex items-center gap-2">
++          <StatusBadge active={instance.active} />
++          <EditWinThorInstanceDialog instance={instance} />
++        </div>
+       </div>
+ 
+       <InstanceSummary instance={instance} agents={instanceAgents} />
+-      <AccessProfilesSection profiles={instance.accessProfiles} />
++      <AccessProfilesSection
++        winthorInstanceId={instance.id}
++        defaultType={instance.executionMode}
++        profiles={instance.accessProfiles}
++      />
+       <InstanceAgentsSection
+         agents={instanceAgents}
+         timeZone={instance.timeZone}
+@@ -113,11 +121,6 @@ export function WinThorInstanceDetailView({
+         timeZone={instance.timeZone}
+       />
+ 
+-      <div className="rounded-xl border border-dashed border-[var(--border)] bg-white px-5 py-4 text-sm text-[var(--muted)]">
+-        Últimas execuções ainda não são exibidas aqui porque a API atual não possui
+-        uma listagem de AutomationRuns por ambiente. Essa seção será habilitada
+-        quando adicionarmos o endpoint de listagem de execuções.
+-      </div>
+     </div>
+   );
+ }
+diff --git a/packages/api-client/src/index.ts b/packages/api-client/src/index.ts
+index dba4622..3a62cca 100644
+--- a/packages/api-client/src/index.ts
++++ b/packages/api-client/src/index.ts
+@@ -1,9 +1,16 @@
+ import type {
+   AgentCredentialListItem,
+   AgentListItem,
++  CompanyDetail,
++  CompanyReference,
++  CreateCompanyInput,
+   CreateAgentCredentialResponse,
+   CreateAgentInput,
+   CreateAgentResponse,
++  CreateWinThorAccessProfileInput,
++  CreateWinThorInstanceInput,
++  UpdateWinThorAccessProfileInput,
++  UpdateWinThorInstanceInput,
+   AutomationScheduleListItem,
+   CreateAutomationScheduleInput,
+   UpdateAutomationScheduleInput,
+@@ -13,8 +20,10 @@ import type {
+   CompanyListItem,
+   HealthResponse,
+   RevokeAgentCredentialResponse,
++  WinThorAccessProfileItem,
+   WinThorInstanceDetail,
+   WinThorInstanceListItem,
++  WinThorInstanceMutationResult,
+ } from '@winaut/contracts';
+ 
+ interface ApiClientOptions {
+@@ -40,8 +49,24 @@ export class WinAutApiError extends Error {
+ export interface WinAutApiClient {
+   getHealth(): Promise<HealthResponse>;
+   getCompanies(): Promise<CompanyListItem[]>;
++  createCompany(input: CreateCompanyInput): Promise<CompanyReference>;
++  getCompany(id: string): Promise<CompanyDetail>;
+   getWinThorInstances(): Promise<WinThorInstanceListItem[]>;
+   getWinThorInstance(id: string): Promise<WinThorInstanceDetail>;
++  createWinThorInstance(
++    input: CreateWinThorInstanceInput,
++  ): Promise<WinThorInstanceMutationResult>;
++  updateWinThorInstance(
++    id: string,
++    input: UpdateWinThorInstanceInput,
++  ): Promise<WinThorInstanceMutationResult>;
++  createWinThorAccessProfile(
++    input: CreateWinThorAccessProfileInput,
++  ): Promise<WinThorAccessProfileItem>;
++  updateWinThorAccessProfile(
++    id: string,
++    input: UpdateWinThorAccessProfileInput,
++  ): Promise<WinThorAccessProfileItem>;
+   getAgents(): Promise<AgentListItem[]>;
+   createAgent(input: CreateAgentInput): Promise<CreateAgentResponse>;
+   getAgent(id: string): Promise<AgentListItem>;
+@@ -164,10 +189,43 @@ export function createWinAutApiClient(
+   return {
+     getHealth: () => request<HealthResponse>('/api/health'),
+     getCompanies: () => request<CompanyListItem[]>('/api/companies'),
++    createCompany: (input) =>
++      request<CompanyReference>('/api/companies', {
++        method: 'POST',
++        body: input,
++      }),
++    getCompany: (id) =>
++      request<CompanyDetail>(`/api/companies/${encodeURIComponent(id)}`),
+     getWinThorInstances: () =>
+       request<WinThorInstanceListItem[]>('/api/winthor-instances'),
+     getWinThorInstance: (id) =>
+       request<WinThorInstanceDetail>(`/api/winthor-instances/${encodeURIComponent(id)}`),
++    createWinThorInstance: (input) =>
++      request<WinThorInstanceMutationResult>('/api/winthor-instances', {
++        method: 'POST',
++        body: input,
++      }),
++    updateWinThorInstance: (id, input) =>
++      request<WinThorInstanceMutationResult>(
++        `/api/winthor-instances/${encodeURIComponent(id)}`,
++        {
++          method: 'PATCH',
++          body: input,
++        },
++      ),
++    createWinThorAccessProfile: (input) =>
++      request<WinThorAccessProfileItem>('/api/winthor-access-profiles', {
++        method: 'POST',
++        body: input,
++      }),
++    updateWinThorAccessProfile: (id, input) =>
++      request<WinThorAccessProfileItem>(
++        `/api/winthor-access-profiles/${encodeURIComponent(id)}`,
++        {
++          method: 'PATCH',
++          body: input,
++        },
++      ),
+     getAgents: () => request<AgentListItem[]>('/api/agents'),
+     createAgent: (input) =>
+       request<CreateAgentResponse>('/api/agents', {
+diff --git a/packages/contracts/src/admin.ts b/packages/contracts/src/admin.ts
+index 241119c..e9f52a5 100644
+--- a/packages/contracts/src/admin.ts
++++ b/packages/contracts/src/admin.ts
+@@ -25,6 +25,28 @@ export interface CompanyListItem extends CompanyReference {
+   };
+ }
+ 
++export interface CreateCompanyInput {
++  name: string;
++  document?: string;
++  active?: boolean;
++}
++
++export interface CompanyWinThorInstanceItem {
++  id: string;
++  companyId: string;
++  name: string;
++  active: boolean;
++  timeZone: string;
++  hostingType: WinThorHostingType;
++  executionMode: WinThorExecutionMode;
++  createdAt: DateTimeString;
++  updatedAt: DateTimeString;
++}
++
++export interface CompanyDetail extends CompanyReference {
++  winthorInstances: CompanyWinThorInstanceItem[];
++}
++
+ export interface WinThorInstanceListItem {
+   id: string;
+   companyId: string;
+@@ -44,6 +66,28 @@ export interface WinThorInstanceListItem {
+   };
+ }
+ 
++export interface CreateWinThorInstanceInput {
++  companyId: string;
++  name: string;
++  active?: boolean;
++  timeZone: string;
++  hostingType: WinThorHostingType;
++  executionMode: WinThorExecutionMode;
++}
++
++export interface UpdateWinThorInstanceInput {
++  name?: string;
++  active?: boolean;
++  timeZone?: string;
++  hostingType?: WinThorHostingType;
++  executionMode?: WinThorExecutionMode;
++}
++
++export type WinThorInstanceMutationResult = Omit<
++  WinThorInstanceListItem,
++  '_count'
++>;
++
+ 
+ export interface WinThorAccessProfileItem {
+   id: string;
+@@ -58,6 +102,25 @@ export interface WinThorAccessProfileItem {
+   updatedAt: DateTimeString;
+ }
+ 
++export interface CreateWinThorAccessProfileInput {
++  winthorInstanceId: string;
++  type: WinThorExecutionMode;
++  endpoint?: string;
++  applicationName?: string;
++  username?: string;
++  secretReference?: string;
++  enabled?: boolean;
++}
++
++export interface UpdateWinThorAccessProfileInput {
++  type?: WinThorExecutionMode;
++  endpoint?: string | null;
++  applicationName?: string | null;
++  username?: string | null;
++  secretReference?: string | null;
++  enabled?: boolean;
++}
++
+ export interface WinThorInstanceAgentItem {
+   id: string;
+   winthorInstanceId: string;

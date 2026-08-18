@@ -11,6 +11,7 @@ import { AccessProfilesSection } from './detail/access-profiles-section';
 import { InstanceAgentsSection } from './detail/instance-agents-section';
 import { InstanceSchedulesSection } from './detail/instance-schedules-section';
 import { InstanceSummary } from './detail/instance-summary';
+import { EditWinThorInstanceDialog } from './edit-winthor-instance-dialog';
 import { winThorInstanceQueryOptions } from './queries';
 
 interface WinThorInstanceDetailViewProps {
@@ -99,11 +100,18 @@ export function WinThorInstanceDetailView({
             Visão operacional do ambiente, acessos, Agents e agendamentos.
           </p>
         </div>
-        <StatusBadge active={instance.active} />
+        <div className="flex items-center gap-2">
+          <StatusBadge active={instance.active} />
+          <EditWinThorInstanceDialog instance={instance} />
+        </div>
       </div>
 
       <InstanceSummary instance={instance} agents={instanceAgents} />
-      <AccessProfilesSection profiles={instance.accessProfiles} />
+      <AccessProfilesSection
+        winthorInstanceId={instance.id}
+        defaultType={instance.executionMode}
+        profiles={instance.accessProfiles}
+      />
       <InstanceAgentsSection
         agents={instanceAgents}
         timeZone={instance.timeZone}
@@ -113,11 +121,6 @@ export function WinThorInstanceDetailView({
         timeZone={instance.timeZone}
       />
 
-      <div className="rounded-xl border border-dashed border-[var(--border)] bg-white px-5 py-4 text-sm text-[var(--muted)]">
-        Últimas execuções ainda não são exibidas aqui porque a API atual não possui
-        uma listagem de AutomationRuns por ambiente. Essa seção será habilitada
-        quando adicionarmos o endpoint de listagem de execuções.
-      </div>
     </div>
   );
 }

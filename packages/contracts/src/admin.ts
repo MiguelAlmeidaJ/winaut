@@ -25,6 +25,28 @@ export interface CompanyListItem extends CompanyReference {
   };
 }
 
+export interface CreateCompanyInput {
+  name: string;
+  document?: string;
+  active?: boolean;
+}
+
+export interface CompanyWinThorInstanceItem {
+  id: string;
+  companyId: string;
+  name: string;
+  active: boolean;
+  timeZone: string;
+  hostingType: WinThorHostingType;
+  executionMode: WinThorExecutionMode;
+  createdAt: DateTimeString;
+  updatedAt: DateTimeString;
+}
+
+export interface CompanyDetail extends CompanyReference {
+  winthorInstances: CompanyWinThorInstanceItem[];
+}
+
 export interface WinThorInstanceListItem {
   id: string;
   companyId: string;
@@ -44,6 +66,28 @@ export interface WinThorInstanceListItem {
   };
 }
 
+export interface CreateWinThorInstanceInput {
+  companyId: string;
+  name: string;
+  active?: boolean;
+  timeZone: string;
+  hostingType: WinThorHostingType;
+  executionMode: WinThorExecutionMode;
+}
+
+export interface UpdateWinThorInstanceInput {
+  name?: string;
+  active?: boolean;
+  timeZone?: string;
+  hostingType?: WinThorHostingType;
+  executionMode?: WinThorExecutionMode;
+}
+
+export type WinThorInstanceMutationResult = Omit<
+  WinThorInstanceListItem,
+  '_count'
+>;
+
 
 export interface WinThorAccessProfileItem {
   id: string;
@@ -56,6 +100,25 @@ export interface WinThorAccessProfileItem {
   enabled: boolean;
   createdAt: DateTimeString;
   updatedAt: DateTimeString;
+}
+
+export interface CreateWinThorAccessProfileInput {
+  winthorInstanceId: string;
+  type: WinThorExecutionMode;
+  endpoint?: string;
+  applicationName?: string;
+  username?: string;
+  secretReference?: string;
+  enabled?: boolean;
+}
+
+export interface UpdateWinThorAccessProfileInput {
+  type?: WinThorExecutionMode;
+  endpoint?: string | null;
+  applicationName?: string | null;
+  username?: string | null;
+  secretReference?: string | null;
+  enabled?: boolean;
 }
 
 export interface WinThorInstanceAgentItem {

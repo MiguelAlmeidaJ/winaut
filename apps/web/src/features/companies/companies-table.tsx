@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
@@ -43,7 +44,7 @@ export function CompaniesTable() {
     return (
       <EmptyState
         title="Nenhuma empresa cadastrada"
-        description="Cadastre a primeira empresa pela API nesta etapa. A criação pelo painel será adicionada na próxima evolução da tela."
+        description="Cadastre a primeira empresa para iniciar o provisionamento de ambientes WinThor."
       />
     );
   }
@@ -64,7 +65,12 @@ export function CompaniesTable() {
             {query.data.map((company) => (
               <tr key={company.id} className="hover:bg-slate-50/70">
                 <td className="px-5 py-4 font-medium text-[var(--foreground)]">
-                  {company.name}
+                  <Link
+                    href={`/companies/${company.id}`}
+                    className="hover:text-[var(--accent)] hover:underline"
+                  >
+                    {company.name}
+                  </Link>
                 </td>
                 <td className="px-5 py-4 text-[var(--muted)]">
                   {company.document || '—'}

@@ -1,9 +1,15 @@
-import type { WinThorAccessProfileItem } from '@winaut/contracts';
+'use client';
+
+import type {
+  WinThorAccessProfileItem,
+  WinThorExecutionMode,
+} from '@winaut/contracts';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge } from '@/components/ui/status-badge';
 
 import { formatExecutionMode } from '../formatters';
+import { AccessProfileDialog } from './access-profile-dialog';
 import { DetailSection } from './detail-section';
 
 function valueOrDash(value: string | null): string {
@@ -11,16 +17,26 @@ function valueOrDash(value: string | null): string {
 }
 
 interface AccessProfilesSectionProps {
+  winthorInstanceId: string;
+  defaultType: WinThorExecutionMode;
   profiles: WinThorAccessProfileItem[];
 }
 
 export function AccessProfilesSection({
+  winthorInstanceId,
+  defaultType,
   profiles,
 }: AccessProfilesSectionProps) {
   return (
     <DetailSection
       title="Perfis de acesso"
       description="Somente metadados seguros de conexão. Nenhum segredo em plaintext é exibido."
+      action={
+        <AccessProfileDialog
+          winthorInstanceId={winthorInstanceId}
+          defaultType={defaultType}
+        />
+      }
     >
       {profiles.length === 0 ? (
         <div className="p-5">
@@ -40,6 +56,7 @@ export function AccessProfilesSection({
                 <th className="px-5 py-3">Usuário</th>
                 <th className="px-5 py-3">Secret reference</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
@@ -62,6 +79,14 @@ export function AccessProfilesSection({
                   </td>
                   <td className="px-5 py-4">
                     <StatusBadge active={profile.enabled} />
+                  </td>
+                  <td className="px-5 py-4 text-right">
+                    <AccessProfileDialog
+                      winthorInstanceId={winthorInstanceId}
+                      defaultType={defaultType}
+                      profile={profile}
+                      triggerLabel="Editar"
+                    />
                   </td>
                 </tr>
               ))}

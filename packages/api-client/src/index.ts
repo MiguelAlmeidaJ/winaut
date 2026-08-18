@@ -1,9 +1,16 @@
 import type {
   AgentCredentialListItem,
   AgentListItem,
+  CompanyDetail,
+  CompanyReference,
+  CreateCompanyInput,
   CreateAgentCredentialResponse,
   CreateAgentInput,
   CreateAgentResponse,
+  CreateWinThorAccessProfileInput,
+  CreateWinThorInstanceInput,
+  UpdateWinThorAccessProfileInput,
+  UpdateWinThorInstanceInput,
   AutomationScheduleListItem,
   CreateAutomationScheduleInput,
   UpdateAutomationScheduleInput,
@@ -13,8 +20,10 @@ import type {
   CompanyListItem,
   HealthResponse,
   RevokeAgentCredentialResponse,
+  WinThorAccessProfileItem,
   WinThorInstanceDetail,
   WinThorInstanceListItem,
+  WinThorInstanceMutationResult,
 } from '@winaut/contracts';
 
 interface ApiClientOptions {
@@ -40,8 +49,24 @@ export class WinAutApiError extends Error {
 export interface WinAutApiClient {
   getHealth(): Promise<HealthResponse>;
   getCompanies(): Promise<CompanyListItem[]>;
+  createCompany(input: CreateCompanyInput): Promise<CompanyReference>;
+  getCompany(id: string): Promise<CompanyDetail>;
   getWinThorInstances(): Promise<WinThorInstanceListItem[]>;
   getWinThorInstance(id: string): Promise<WinThorInstanceDetail>;
+  createWinThorInstance(
+    input: CreateWinThorInstanceInput,
+  ): Promise<WinThorInstanceMutationResult>;
+  updateWinThorInstance(
+    id: string,
+    input: UpdateWinThorInstanceInput,
+  ): Promise<WinThorInstanceMutationResult>;
+  createWinThorAccessProfile(
+    input: CreateWinThorAccessProfileInput,
+  ): Promise<WinThorAccessProfileItem>;
+  updateWinThorAccessProfile(
+    id: string,
+    input: UpdateWinThorAccessProfileInput,
+  ): Promise<WinThorAccessProfileItem>;
   getAgents(): Promise<AgentListItem[]>;
   createAgent(input: CreateAgentInput): Promise<CreateAgentResponse>;
   getAgent(id: string): Promise<AgentListItem>;
@@ -164,10 +189,43 @@ export function createWinAutApiClient(
   return {
     getHealth: () => request<HealthResponse>('/api/health'),
     getCompanies: () => request<CompanyListItem[]>('/api/companies'),
+    createCompany: (input) =>
+      request<CompanyReference>('/api/companies', {
+        method: 'POST',
+        body: input,
+      }),
+    getCompany: (id) =>
+      request<CompanyDetail>(`/api/companies/${encodeURIComponent(id)}`),
     getWinThorInstances: () =>
       request<WinThorInstanceListItem[]>('/api/winthor-instances'),
     getWinThorInstance: (id) =>
       request<WinThorInstanceDetail>(`/api/winthor-instances/${encodeURIComponent(id)}`),
+    createWinThorInstance: (input) =>
+      request<WinThorInstanceMutationResult>('/api/winthor-instances', {
+        method: 'POST',
+        body: input,
+      }),
+    updateWinThorInstance: (id, input) =>
+      request<WinThorInstanceMutationResult>(
+        `/api/winthor-instances/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: input,
+        },
+      ),
+    createWinThorAccessProfile: (input) =>
+      request<WinThorAccessProfileItem>('/api/winthor-access-profiles', {
+        method: 'POST',
+        body: input,
+      }),
+    updateWinThorAccessProfile: (id, input) =>
+      request<WinThorAccessProfileItem>(
+        `/api/winthor-access-profiles/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: input,
+        },
+      ),
     getAgents: () => request<AgentListItem[]>('/api/agents'),
     createAgent: (input) =>
       request<CreateAgentResponse>('/api/agents', {
