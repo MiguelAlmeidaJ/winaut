@@ -1,10 +1,15 @@
 import type {
   AdminSessionResponse,
   AdminUser,
+  CreateWinThorBranchInput,
   AgentCredentialListItem,
   AgentListItem,
   LoginInput,
   LogoutResponse,
+  Routine507Configuration,
+  Routine507ConfigurationView,
+  Routine507PreviewResponse,
+  UpdateWinThorBranchInput,
   CompanyDetail,
   CompanyReference,
   CreateCompanyInput,
@@ -26,6 +31,7 @@ import type {
   HealthResponse,
   RevokeAgentCredentialResponse,
   WinThorAccessProfileItem,
+  WinThorBranchItem,
   WinThorInstanceDetail,
   WinThorInstanceListItem,
   WinThorInstanceMutationResult,
@@ -55,6 +61,26 @@ export interface WinAutApiClient {
   login(input: LoginInput): Promise<AdminSessionResponse>;
   logout(): Promise<LogoutResponse>;
   getCurrentAdmin(): Promise<AdminUser>;
+  getWinThorBranches(winthorInstanceId?: string): Promise<WinThorBranchItem[]>;
+  createWinThorBranch(input: CreateWinThorBranchInput): Promise<WinThorBranchItem>;
+  updateWinThorBranch(
+    id: string,
+    input: UpdateWinThorBranchInput,
+  ): Promise<WinThorBranchItem>;
+  getRoutine507Configuration(
+    winthorInstanceId: string,
+  ): Promise<Routine507ConfigurationView>;
+  saveRoutine507Configuration(
+    winthorInstanceId: string,
+    input: Routine507Configuration,
+  ): Promise<Routine507ConfigurationView>;
+  previewRoutine507Configuration(
+    winthorInstanceId: string,
+    input: Routine507Configuration,
+  ): Promise<Routine507PreviewResponse>;
+  resetRoutine507Configuration(
+    winthorInstanceId: string,
+  ): Promise<Routine507ConfigurationView>;
   getHealth(): Promise<HealthResponse>;
   getCompanies(): Promise<CompanyListItem[]>;
   createCompany(input: CreateCompanyInput): Promise<CompanyReference>;
@@ -145,7 +171,7 @@ function errorMessage(payload: ApiErrorPayload, status: number): string {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
 }
 
@@ -207,6 +233,45 @@ export function createWinAutApiClient(
         method: 'POST',
       }),
     getCurrentAdmin: () => request<AdminUser>('/api/auth/me'),
+    getWinThorBranches: (winthorInstanceId) => {
+      const search = new URLSearchParams();
+      if (winthorInstanceId) {
+        search.set('winthorInstanceId', winthorInstanceId);
+      }
+      const query = search.toString();
+      return request<WinThorBranchItem[]>(
+        `/api/winthor-branches${query ? `?${query}` : ''}`,
+      );
+    },
+    createWinThorBranch: (input) =>
+      request<WinThorBranchItem>('/api/winthor-branches', {
+        method: 'POST',
+        body: input,
+      }),
+    updateWinThorBranch: (id, input) =>
+      request<WinThorBranchItem>(
+        `/api/winthor-branches/${encodeURIComponent(id)}`,
+        { method: 'PATCH', body: input },
+      ),
+    getRoutine507Configuration: (winthorInstanceId) =>
+      request<Routine507ConfigurationView>(
+        `/api/automation-configurations/${encodeURIComponent(winthorInstanceId)}/507`,
+      ),
+    saveRoutine507Configuration: (winthorInstanceId, input) =>
+      request<Routine507ConfigurationView>(
+        `/api/automation-configurations/${encodeURIComponent(winthorInstanceId)}/507`,
+        { method: 'PUT', body: input },
+      ),
+    previewRoutine507Configuration: (winthorInstanceId, input) =>
+      request<Routine507PreviewResponse>(
+        `/api/automation-configurations/${encodeURIComponent(winthorInstanceId)}/507/preview`,
+        { method: 'POST', body: input },
+      ),
+    resetRoutine507Configuration: (winthorInstanceId) =>
+      request<Routine507ConfigurationView>(
+        `/api/automation-configurations/${encodeURIComponent(winthorInstanceId)}/507`,
+        { method: 'DELETE' },
+      ),
     getHealth: () => request<HealthResponse>('/api/health'),
     getCompanies: () => request<CompanyListItem[]>('/api/companies'),
     createCompany: (input) =>

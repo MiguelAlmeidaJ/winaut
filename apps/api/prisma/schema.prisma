@@ -106,6 +106,8 @@ model WinThorInstance {
 
   company        Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
   accessProfiles WinThorAccessProfile[]
+  branches       WinThorBranch[]
+  automationConfigurations AutomationConfiguration[]
   agents         Agent[]
   schedules      AutomationSchedule[]
   runs           AutomationRun[]
@@ -131,6 +133,37 @@ model WinThorAccessProfile {
 
   @@index([winthorInstanceId, enabled, type])
   @@map("winthor_access_profiles")
+}
+
+model WinThorBranch {
+  id                String   @id @default(uuid()) @db.Char(36)
+  winthorInstanceId String   @map("winthor_instance_id") @db.Char(36)
+  code              String   @db.VarChar(30)
+  name              String   @db.VarChar(150)
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  winthorInstance WinThorInstance @relation(fields: [winthorInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([winthorInstanceId, code])
+  @@index([winthorInstanceId, active])
+  @@map("winthor_branches")
+}
+
+model AutomationConfiguration {
+  id                String   @id @default(uuid()) @db.Char(36)
+  winthorInstanceId String   @map("winthor_instance_id") @db.Char(36)
+  automationCode    String   @map("automation_code") @db.VarChar(50)
+  settings          Json
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  winthorInstance WinThorInstance @relation(fields: [winthorInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([winthorInstanceId, automationCode], map: "automation_cfg_instance_code_key")
+  @@index([automationCode])
+  @@map("automation_configurations")
 }
 
 model Agent {

@@ -16,6 +16,7 @@ const routeNames = [
   { prefix: '/companies', label: 'Empresas' },
   { prefix: '/winthor-instances', label: 'Ambientes WinThor' },
   { prefix: '/agents', label: 'Agents' },
+  { prefix: '/automation-configurations', label: 'Configurações' },
   { prefix: '/schedules', label: 'Agendamentos' },
   { prefix: '/runs', label: 'Execuções' },
 ] as const;

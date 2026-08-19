@@ -363,6 +363,80 @@ export interface AutomationRunDetail extends AutomationRunListItem {
   steps: AutomationStepItem[];
 }
 
+export interface WinThorBranchItem {
+  id: string;
+  winthorInstanceId: string;
+  code: string;
+  name: string;
+  active: boolean;
+  createdAt: DateTimeString;
+  updatedAt: DateTimeString;
+  winthorInstance: {
+    id: string;
+    name: string;
+    company: {
+      id: string;
+      name: string;
+    };
+  };
+}
+
+export interface CreateWinThorBranchInput {
+  winthorInstanceId: string;
+  code: string;
+  name: string;
+  active?: boolean;
+}
+
+export interface UpdateWinThorBranchInput {
+  code?: string;
+  name?: string;
+  active?: boolean;
+}
+
+export const Routine507BranchMode = {
+  ALL_ACTIVE: 'ALL_ACTIVE',
+  SELECTED: 'SELECTED',
+} as const;
+
+export type Routine507BranchMode =
+  (typeof Routine507BranchMode)[keyof typeof Routine507BranchMode];
+
+export interface Routine507Configuration {
+  branchMode: Routine507BranchMode;
+  branchIds: string[];
+  turnoverMonths: number[];
+  dailyTurnover: boolean;
+  salePrice: boolean;
+}
+
+export interface AutomationStepPreview {
+  code: string;
+  name: string;
+  sequenceNumber: number;
+  payload: Record<string, unknown>;
+}
+
+export interface Routine507ConfigurationView {
+  winthorInstanceId: string;
+  automationCode: '507';
+  source: 'DEFAULT' | 'SAVED';
+  configuration: Routine507Configuration;
+  branches: Array<{
+    id: string;
+    code: string;
+    name: string;
+    active: boolean;
+  }>;
+  preview: AutomationStepPreview[];
+  updatedAt: DateTimeString | null;
+}
+
+export interface Routine507PreviewResponse {
+  configuration: Routine507Configuration;
+  preview: AutomationStepPreview[];
+}
+
 export interface HealthResponse {
   status: 'ok';
   services: {

@@ -29,6 +29,7 @@ const sections: readonly NavigationSection[] = [
   {
     label: 'Automação',
     items: [
+      { href: '/automation-configurations', label: 'Configurações' },
       { href: '/schedules', label: 'Agendamentos' },
       { href: '/runs', label: 'Execuções' },
     ],

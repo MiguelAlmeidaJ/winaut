@@ -8,6 +8,7 @@ const items = [
   { href: '/companies', label: 'Empresas' },
   { href: '/winthor-instances', label: 'Ambientes' },
   { href: '/agents', label: 'Agents' },
+  { href: '/automation-configurations', label: 'Config.' },
   { href: '/schedules', label: 'Agendamentos' },
   { href: '/runs', label: 'Execuções' },
 ] as const;

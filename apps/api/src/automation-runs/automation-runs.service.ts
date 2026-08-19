@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
-import { AutomationDefinitionRegistry } from '../automation-definitions/automation-definition.registry';
+import { AutomationConfigurationsService } from '../automation-configurations/automation-configurations.service';
 import { PrismaService } from '../database/prisma.service';
 import { ListAutomationRunsDto } from './dto/list-automation-runs.dto';
 import {
@@ -22,7 +22,7 @@ export class AutomationRunsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly definitions: AutomationDefinitionRegistry,
+    private readonly configurations: AutomationConfigurationsService,
   ) {}
 
   createScheduledRun(
@@ -131,13 +131,17 @@ export class AutomationRunsService {
     return `schedule:${scheduleId}:${scheduledFor.toISOString()}`;
   }
 
-  private createRun(
+  private async createRun(
     client: Prisma.TransactionClient | PrismaService['db'],
     schedule: RunSource,
     deduplicationKey: string,
     scheduledFor: Date | null,
   ) {
-    const definition = this.definitions.get(schedule.automationCode);
+    const steps = await this.configurations.buildStepsForRun(
+      client,
+      schedule.winthorInstanceId,
+      schedule.automationCode,
+    );
     const now = new Date();
 
     return client.automationRun.create({
@@ -150,7 +154,7 @@ export class AutomationRunsService {
         scheduledFor,
         startedAt: now,
         steps: {
-          create: definition.steps.map((step) => ({
+          create: steps.map((step) => ({
             code: step.code,
             name: step.name,
             sequenceNumber: step.sequenceNumber,

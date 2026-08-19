@@ -1,4 +1,4 @@
-import { AutomationDefinitionRegistry } from '../automation-definitions/automation-definition.registry';
+import type { AutomationConfigurationsService } from '../automation-configurations/automation-configurations.service';
 import type { PrismaService } from '../database/prisma.service';
 import { AutomationRunsService } from './automation-runs.service';
 
@@ -18,15 +18,34 @@ describe('AutomationRunsService', () => {
     automationCode: '507',
   };
   const create = jest.fn().mockResolvedValue({ id: 'run-id', steps: [] });
+  const findUnique = jest.fn().mockResolvedValue({
+    id: 'run-id',
+    steps: [],
+  });
   const prisma = {
-    db: { automationRun: { create } },
+    db: { automationRun: { create, findUnique } },
   } as unknown as PrismaService;
-  const service = new AutomationRunsService(
-    prisma,
-    new AutomationDefinitionRegistry(),
+  const buildStepsForRun = jest.fn().mockResolvedValue(
+    Array.from({ length: 12 }, (_, index) => ({
+      code: `STEP_${index + 1}`,
+      name: `Etapa ${index + 1}`,
+      sequenceNumber: index + 1,
+      payload: {
+        routine: 507,
+        test: true,
+      },
+    })),
   );
+  const configurations = {
+    buildStepsForRun,
+  } as unknown as AutomationConfigurationsService;
+  const service = new AutomationRunsService(prisma, configurations);
 
-  beforeEach(() => create.mockClear());
+  beforeEach(() => {
+    create.mockClear();
+    findUnique.mockClear();
+    buildStepsForRun.mockClear();
+  });
 
   it('scopes scheduled deduplication to schedule and occurrence', async () => {
     const scheduledFor = new Date('2026-08-17T09:00:00.000Z');
@@ -41,6 +60,11 @@ describe('AutomationRunsService', () => {
       'schedule:11111111-1111-4111-8111-111111111111:2026-08-17T09:00:00.000Z',
     );
     expect(call.data.steps.create).toHaveLength(12);
+    expect(buildStepsForRun).toHaveBeenCalledWith(
+      prisma.db,
+      schedule.winthorInstanceId,
+      schedule.automationCode,
+    );
   });
 
   it('uses a distinct key for every manual trigger', async () => {
