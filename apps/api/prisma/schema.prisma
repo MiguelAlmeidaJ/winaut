@@ -197,6 +197,7 @@ model Agent {
 
   winthorInstance WinThorInstance  @relation(fields: [winthorInstanceId], references: [id], onDelete: Restrict)
   credentials      AgentCredential[]
+  enrollments      AgentEnrollment[]
   claimedSteps     AutomationStep[]
 
   @@unique([winthorInstanceId, hostname])
@@ -220,6 +221,21 @@ model AgentCredential {
 
   @@index([agentId, revokedAt])
   @@map("agent_credentials")
+}
+
+model AgentEnrollment {
+  id         String    @id @default(uuid()) @db.Char(36)
+  agentId    String    @map("agent_id") @db.Char(36)
+  codeHash   String    @unique @map("code_hash") @db.Char(64)
+  expiresAt  DateTime  @map("expires_at") @db.DateTime(3)
+  consumedAt DateTime? @map("consumed_at") @db.DateTime(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, consumedAt, expiresAt], map: "agent_enrollments_agent_status_idx")
+  @@index([expiresAt, consumedAt], map: "agent_enrollments_expiry_idx")
+  @@map("agent_enrollments")
 }
 
 model AutomationSchedule {

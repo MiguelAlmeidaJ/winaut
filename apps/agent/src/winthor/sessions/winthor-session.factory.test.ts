@@ -9,10 +9,7 @@ import {
 
 import { GoGlobalWinThorSession } from './go-global-winthor.session.js';
 import { LocalWinThorSession } from './local-winthor.session.js';
-import {
-  UnsupportedWinThorExecutionModeError,
-  WinThorSessionNotImplementedError,
-} from './winthor-session.errors.js';
+import { UnsupportedWinThorExecutionModeError } from './winthor-session.errors.js';
 import { WinThorSessionFactory } from './winthor-session.factory.js';
 
 const logger = { info: (_message: string) => undefined };
@@ -47,15 +44,6 @@ describe('WinThorSessionFactory', () => {
     assert.ok(
       factory.create(config(WinThorExecutionMode.GO_GLOBAL)) instanceof
         GoGlobalWinThorSession,
-    );
-  });
-
-  it('does not report fake success for scaffold sessions', async () => {
-    const session = factory.create(config(WinThorExecutionMode.GO_GLOBAL));
-
-    await assert.rejects(
-      () => session.connect(),
-      WinThorSessionNotImplementedError,
     );
   });
 

@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { WinThorExecutionMode } from '@winaut/contracts';
 
 import { AgentApiClient } from '../communication/agent-api-client.js';
-import { loadAgentEnvironment } from '../config/agent-env.js';
+import { loadInstalledAgentEnvironment } from '../config/load-installed-agent-environment.js';
 import { LocalWinThorSession } from '../winthor/sessions/local-winthor.session.js';
 
 const execFileAsync = promisify(execFile);
@@ -136,7 +136,7 @@ async function captureUiSnapshot(): Promise<UiWindowSnapshot[]> {
 }
 
 async function main(): Promise<void> {
-  const environment = loadAgentEnvironment();
+  const environment = await loadInstalledAgentEnvironment();
   const apiClient = new AgentApiClient({
     apiUrl: environment.apiUrl,
     token: environment.token,

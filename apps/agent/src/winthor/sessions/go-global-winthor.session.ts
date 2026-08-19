@@ -1,36 +1,234 @@
-import {
-  WinThorExecutionMode,
-  type WinThorConnectionProfile,
-} from '@winaut/contracts';
+import { setTimeout as sleep } from 'node:timers/promises';
 
-import { WinThorSessionNotImplementedError } from './winthor-session.errors.js';
+import type { WinThorConnectionProfile } from '@winaut/contracts';
+
+import type { CredentialSecretResolver } from '../credentials/credential-secret-resolver.interface.js';
+import { PowerShellWindowsCredentialSecretResolver } from '../credentials/powershell-windows-credential-secret.resolver.js';
+import {
+  GoGlobalDesktopState,
+  type GoGlobalDesktopDriver,
+} from '../windows/go-global-desktop-driver.interface.js';
+import { PowerShellGoGlobalDesktopDriver } from '../windows/powershell-go-global-desktop.driver.js';
+import {
+  WinThorGoGlobalAuthenticationRequiredError,
+  WinThorGoGlobalClientNotFoundError,
+  WinThorGoGlobalCredentialNotConfiguredError,
+  WinThorGoGlobalEndpointNotConfiguredError,
+  WinThorGoGlobalSessionStateError,
+  WinThorInvalidRoutineCodeError,
+} from './winthor-session.errors.js';
 import type { WinThorSession } from './winthor-session.interface.js';
 
+const DEFAULT_APPLICATION_NAME = 'WinThor';
+const DEFAULT_CONNECT_TIMEOUT_MS = 45_000;
+const DEFAULT_APPLICATION_TIMEOUT_MS = 45_000;
+const DEFAULT_POLL_INTERVAL_MS = 500;
+
+interface GoGlobalWinThorSessionOptions {
+  driver?: GoGlobalDesktopDriver;
+  credentialResolver?: CredentialSecretResolver;
+  connectTimeoutMs?: number;
+  applicationTimeoutMs?: number;
+  pollIntervalMs?: number;
+}
+
 export class GoGlobalWinThorSession implements WinThorSession {
-  constructor(readonly profile: WinThorConnectionProfile | null) {}
+  private readonly driver: GoGlobalDesktopDriver;
+  private readonly credentialResolver: CredentialSecretResolver;
+  private readonly connectTimeoutMs: number;
+  private readonly applicationTimeoutMs: number;
+  private readonly pollIntervalMs: number;
 
-  connect(): Promise<void> {
-    return this.notImplemented('connect');
+  private connected = false;
+  private authenticated = false;
+  private ownsClient = false;
+
+  constructor(
+    readonly profile: WinThorConnectionProfile | null,
+    options: GoGlobalWinThorSessionOptions = {},
+  ) {
+    this.driver = options.driver ?? new PowerShellGoGlobalDesktopDriver();
+    this.credentialResolver =
+      options.credentialResolver ??
+      new PowerShellWindowsCredentialSecretResolver();
+    this.connectTimeoutMs =
+      options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+    this.applicationTimeoutMs =
+      options.applicationTimeoutMs ?? DEFAULT_APPLICATION_TIMEOUT_MS;
+    this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   }
 
-  ensureAuthenticated(): Promise<void> {
-    return this.notImplemented('ensureAuthenticated');
+  async connect(): Promise<void> {
+    const host = this.profile?.endpoint?.trim();
+
+    if (!host) {
+      throw new WinThorGoGlobalEndpointNotConfiguredError();
+    }
+
+    let client = await this.driver.findClient();
+
+    if (!client) {
+      await this.driver.launchClient();
+      this.ownsClient = true;
+      client = await this.waitForClient();
+    }
+
+    if (!client) {
+      throw new WinThorGoGlobalClientNotFoundError(this.connectTimeoutMs);
+    }
+
+    const state = await this.driver.inspectState();
+
+    if (state.state === GoGlobalDesktopState.CLIENT_READY) {
+      await this.driver.connectToHost(host);
+      await this.waitForState(
+        [
+          GoGlobalDesktopState.LOGIN_REQUIRED,
+          GoGlobalDesktopState.APPLICATION_CATALOG,
+          GoGlobalDesktopState.WINTHOR_READY,
+        ],
+        this.connectTimeoutMs,
+        'GO-Global connection',
+      );
+    }
+
+    this.connected = true;
   }
 
-  openRoutine(_routineCode: number): Promise<void> {
-    return this.notImplemented('openRoutine');
+  async ensureAuthenticated(): Promise<void> {
+    this.assertConnected('ensureAuthenticated');
+
+    let state = await this.driver.inspectState();
+
+    if (state.state === GoGlobalDesktopState.LOGIN_REQUIRED) {
+      const reference = this.profile?.secretReference?.trim();
+
+      if (!reference) {
+        throw new WinThorGoGlobalCredentialNotConfiguredError();
+      }
+
+      const credential = await this.credentialResolver.resolve(reference);
+      const username =
+        this.profile?.username?.trim() || credential.username?.trim();
+
+      if (!username) {
+        throw new WinThorGoGlobalCredentialNotConfiguredError();
+      }
+
+      await this.driver.authenticate(username, credential.secret);
+      state = await this.waitForState(
+        [
+          GoGlobalDesktopState.APPLICATION_CATALOG,
+          GoGlobalDesktopState.WINTHOR_READY,
+        ],
+        this.connectTimeoutMs,
+        'GO-Global authentication',
+      );
+    }
+
+    if (
+      state.state !== GoGlobalDesktopState.APPLICATION_CATALOG &&
+      state.state !== GoGlobalDesktopState.WINTHOR_READY
+    ) {
+      throw new WinThorGoGlobalAuthenticationRequiredError(
+        state.windowTitle ?? 'App Controller',
+      );
+    }
+
+    this.authenticated = true;
   }
 
-  disconnect(): Promise<void> {
-    return this.notImplemented('disconnect');
+  async openRoutine(routineCode: number): Promise<void> {
+    this.assertConnected('openRoutine');
+
+    if (!this.authenticated) {
+      throw new WinThorGoGlobalSessionStateError(
+        'openRoutine',
+        'authenticated',
+      );
+    }
+
+    if (!Number.isInteger(routineCode) || routineCode <= 0) {
+      throw new WinThorInvalidRoutineCodeError(routineCode);
+    }
+
+    let state = await this.driver.inspectState();
+
+    if (state.state === GoGlobalDesktopState.APPLICATION_CATALOG) {
+      await this.driver.launchApplication(
+        this.profile?.applicationName?.trim() || DEFAULT_APPLICATION_NAME,
+      );
+      state = await this.waitForState(
+        [GoGlobalDesktopState.WINTHOR_READY],
+        this.applicationTimeoutMs,
+        'WinThor remote application launch',
+      );
+    }
+
+    if (state.state !== GoGlobalDesktopState.WINTHOR_READY) {
+      throw new WinThorGoGlobalSessionStateError(
+        'openRoutine',
+        'WinThor ready',
+      );
+    }
+
+    await this.driver.openRoutine(routineCode);
   }
 
-  private notImplemented(operation: string): Promise<never> {
-    return Promise.reject(
-      new WinThorSessionNotImplementedError(
-        WinThorExecutionMode.GO_GLOBAL,
+  async disconnect(): Promise<void> {
+    try {
+      if (this.ownsClient) {
+        await this.driver.closeSession();
+      }
+    } finally {
+      this.connected = false;
+      this.authenticated = false;
+      this.ownsClient = false;
+    }
+  }
+
+  private assertConnected(operation: string): void {
+    if (!this.connected) {
+      throw new WinThorGoGlobalSessionStateError(operation, 'connected');
+    }
+  }
+
+  private async waitForClient() {
+    const deadline = Date.now() + this.connectTimeoutMs;
+
+    do {
+      const client = await this.driver.findClient();
+
+      if (client) {
+        return client;
+      }
+
+      await sleep(this.pollIntervalMs);
+    } while (Date.now() < deadline);
+
+    return null;
+  }
+
+  private async waitForState(
+    expectedStates: GoGlobalDesktopState[],
+    timeoutMs: number,
+    operation: string,
+  ) {
+    const deadline = Date.now() + timeoutMs;
+    let current = await this.driver.inspectState();
+
+    while (!expectedStates.includes(current.state) && Date.now() < deadline) {
+      await sleep(this.pollIntervalMs);
+      current = await this.driver.inspectState();
+    }
+
+    if (!expectedStates.includes(current.state)) {
+      throw new WinThorGoGlobalSessionStateError(
         operation,
-      ),
-    );
+        expectedStates.join(' or '),
+      );
+    }
+
+    return current;
   }
 }

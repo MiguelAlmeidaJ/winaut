@@ -13,3 +13,7 @@ export * from './winthor/sessions/winthor-session.factory.js';
 export * from './winthor/sessions/winthor-session.interface.js';
 export * from './winthor/windows/local-winthor-desktop-driver.interface.js';
 export * from './winthor/windows/powershell-local-winthor-desktop.driver.js';
+export * from './winthor/credentials/credential-secret-resolver.interface.js';
+export * from './winthor/credentials/powershell-windows-credential-secret.resolver.js';
+export * from './winthor/windows/go-global-desktop-driver.interface.js';
+export * from './winthor/windows/powershell-go-global-desktop.driver.js';

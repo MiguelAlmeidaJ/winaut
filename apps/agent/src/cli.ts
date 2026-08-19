@@ -1,12 +1,23 @@
 import 'dotenv/config';
 
 import { AgentApiClient } from './communication/agent-api-client.js';
-import { loadAgentEnvironment } from './config/agent-env.js';
+import { loadInstalledAgentEnvironment } from './config/load-installed-agent-environment.js';
 import { WinThorAgentJobHandler } from './jobs/winthor-agent-job-handler.js';
 import { AgentRuntime } from './runtime/agent-runtime.js';
+import { acquireAgentSingleInstanceLock } from './runtime/agent-single-instance-lock.js';
 
 async function main(): Promise<void> {
-  const environment = loadAgentEnvironment();
+  const releaseInstanceLock = await acquireAgentSingleInstanceLock();
+
+  try {
+    await runAgent();
+  } finally {
+    await releaseInstanceLock();
+  }
+}
+
+async function runAgent(): Promise<void> {
+  const environment = await loadInstalledAgentEnvironment();
   const controller = new AbortController();
 
   const stop = (signalName: string) => {

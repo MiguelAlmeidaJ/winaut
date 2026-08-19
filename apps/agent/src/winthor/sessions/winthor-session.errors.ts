@@ -80,3 +80,61 @@ export class WinThorInvalidRoutineCodeError extends Error {
     this.name = WinThorInvalidRoutineCodeError.name;
   }
 }
+
+export class WinThorGoGlobalSessionStateError extends Error {
+  readonly code = 'WINTHOR_GOGLOBAL_SESSION_STATE_INVALID';
+
+  constructor(
+    readonly operation: string,
+    readonly expectedState: string,
+  ) {
+    super(
+      `GO_GLOBAL session cannot ${operation}; expected state: ${expectedState}.`,
+    );
+    this.name = WinThorGoGlobalSessionStateError.name;
+  }
+}
+
+export class WinThorGoGlobalEndpointNotConfiguredError extends Error {
+  readonly code = 'WINTHOR_GOGLOBAL_ENDPOINT_NOT_CONFIGURED';
+
+  constructor() {
+    super(
+      'GO_GLOBAL access profile must define endpoint with the App Controller Host Address.',
+    );
+    this.name = WinThorGoGlobalEndpointNotConfiguredError.name;
+  }
+}
+
+export class WinThorGoGlobalClientNotFoundError extends Error {
+  readonly code = 'WINTHOR_GOGLOBAL_CLIENT_NOT_FOUND';
+
+  constructor(readonly timeoutMs: number) {
+    super(
+      `App Controller / GO-Global client window was not found within ${timeoutMs}ms.`,
+    );
+    this.name = WinThorGoGlobalClientNotFoundError.name;
+  }
+}
+
+export class WinThorGoGlobalCredentialNotConfiguredError extends Error {
+  readonly code = 'WINTHOR_GOGLOBAL_CREDENTIAL_NOT_CONFIGURED';
+
+  constructor() {
+    super(
+      'GO_GLOBAL authentication requires username and secretReference. Use a Windows Credential Manager reference such as windows-credential:orquestra/winthor/producao.',
+    );
+    this.name = WinThorGoGlobalCredentialNotConfiguredError.name;
+  }
+}
+
+export class WinThorGoGlobalAuthenticationRequiredError extends Error {
+  readonly code = 'WINTHOR_GOGLOBAL_AUTHENTICATION_REQUIRED';
+
+  constructor(readonly windowTitle: string) {
+    super(
+      `GO-Global still requires authentication before automation can continue (window: "${windowTitle}").`,
+    );
+    this.name = WinThorGoGlobalAuthenticationRequiredError.name;
+  }
+}

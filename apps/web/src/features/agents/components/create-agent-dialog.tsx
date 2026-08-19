@@ -1,7 +1,10 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CreateAgentResponse } from '@winaut/contracts';
+import type {
+  CreateAgentEnrollmentResponse,
+  CreateAgentResponse,
+} from '@winaut/contracts';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
 
@@ -12,20 +15,25 @@ import {
 } from '@/features/winthor-instances/queries';
 
 import { agentKeys } from '../queries';
-import { OneTimeTokenDialog } from './one-time-token-dialog';
+import { AgentActivationDialog } from './agent-activation-dialog';
 
 export function CreateAgentDialog() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [created, setCreated] = useState<CreateAgentResponse | null>(null);
+  const [enrollment, setEnrollment] =
+    useState<CreateAgentEnrollmentResponse | null>(null);
   const [winthorInstanceId, setWinthorInstanceId] = useState('');
   const [name, setName] = useState('');
-  const [hostname, setHostname] = useState('');
-  const [version, setVersion] = useState('');
 
   const instancesQuery = useQuery({
     ...winThorInstancesQueryOptions,
     enabled: open,
+  });
+
+  const enrollmentMutation = useMutation({
+    mutationFn: (agentId: string) => apiClient.createAgentEnrollment(agentId),
+    onSuccess: setEnrollment,
   });
 
   const mutation = useMutation({
@@ -33,11 +41,10 @@ export function CreateAgentDialog() {
       apiClient.createAgent({
         winthorInstanceId,
         name: name.trim(),
-        hostname: hostname.trim(),
-        ...(version.trim() ? { version: version.trim() } : {}),
       }),
     onSuccess: async (response) => {
       setCreated(response);
+      enrollmentMutation.mutate(response.agent.id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: agentKeys.all }),
         queryClient.invalidateQueries({ queryKey: winThorInstanceKeys.all }),
@@ -54,34 +61,60 @@ export function CreateAgentDialog() {
   function close() {
     setOpen(false);
     setCreated(null);
+    setEnrollment(null);
     setWinthorInstanceId('');
     setName('');
-    setHostname('');
-    setVersion('');
     mutation.reset();
+    enrollmentMutation.reset();
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!winthorInstanceId || !name.trim() || !hostname.trim()) {
+    if (!winthorInstanceId || !name.trim()) {
       return;
     }
     mutation.mutate();
   }
 
+  if (enrollment) {
+    return <AgentActivationDialog enrollment={enrollment} onClose={close} />;
+  }
+
   if (created) {
     return (
-      <OneTimeTokenDialog
-        title={`Credencial criada para ${created.agent.name}`}
-        token={created.credential.token}
-        warning={created.credential.warning}
-        onClose={close}
-        instructions={[
-          'Salve este token como WINAUT_AGENT_TOKEN no Windows Agent.',
-          'Configure WINAUT_API_URL com uma URL da API acessível pela máquina do Agent.',
-          'Inicie o Agent e aguarde o primeiro heartbeat; o status passará de Offline para Online.',
-        ]}
-      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="w-full max-w-lg rounded-xl border border-[var(--border)] bg-white p-6 shadow-xl">
+          <h2 className="text-lg font-semibold">Preparando ativação</h2>
+          {enrollmentMutation.isPending ? (
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Agent cadastrado. Gerando código de ativação seguro...
+            </p>
+          ) : enrollmentMutation.isError ? (
+            <>
+              <p className="mt-2 text-sm text-red-700">
+                O Agent foi cadastrado, mas não foi possível gerar o código de
+                ativação: {enrollmentMutation.error.message}
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={close}
+                  className="rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)]"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => enrollmentMutation.mutate(created.agent.id)}
+                  className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  Tentar novamente
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
     );
   }
 
@@ -107,7 +140,8 @@ export function CreateAgentDialog() {
               Novo Agent
             </h2>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Cadastre o Windows Agent no ambiente WinThor que ele poderá atender.
+              Escolha o ambiente e dê um nome ao Agent. Hostname e versão serão
+              descobertos automaticamente durante a instalação.
             </p>
 
             {instancesQuery.isPending ? (
@@ -151,28 +185,11 @@ export function CreateAgentDialog() {
                   />
                 </label>
 
-                <label className="block text-sm font-medium">
-                  Hostname
-                  <input
-                    required
-                    maxLength={255}
-                    value={hostname}
-                    onChange={(event) => setHostname(event.target.value)}
-                    placeholder="SRV-WINTHOR-01"
-                    className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-                  />
-                </label>
-
-                <label className="block text-sm font-medium">
-                  Versão <span className="font-normal text-[var(--muted)]">(opcional)</span>
-                  <input
-                    maxLength={50}
-                    value={version}
-                    onChange={(event) => setVersion(event.target.value)}
-                    placeholder="0.1.0"
-                    className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-                  />
-                </label>
+                <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+                  Após o cadastro, o Orquestra gerará um código temporário para
+                  vincular a máquina Windows. Nenhum token permanente precisa ser
+                  copiado manualmente.
+                </div>
 
                 {mutation.isError ? (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -194,7 +211,7 @@ export function CreateAgentDialog() {
                     disabled={mutation.isPending}
                     className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {mutation.isPending ? 'Cadastrando...' : 'Cadastrar Agent'}
+                    {mutation.isPending ? 'Cadastrando...' : 'Cadastrar e ativar'}
                   </button>
                 </div>
               </form>

@@ -14,6 +14,7 @@ import type {
   CompanyReference,
   CreateCompanyInput,
   CreateAgentCredentialResponse,
+  CreateAgentEnrollmentResponse,
   CreateAgentInput,
   CreateAgentResponse,
   UpdateAgentInput,
@@ -103,6 +104,9 @@ export interface WinAutApiClient {
   ): Promise<WinThorAccessProfileItem>;
   getAgents(): Promise<AgentListItem[]>;
   createAgent(input: CreateAgentInput): Promise<CreateAgentResponse>;
+  createAgentEnrollment(
+    id: string,
+  ): Promise<CreateAgentEnrollmentResponse>;
   getAgent(id: string): Promise<AgentListItem>;
   updateAgent(id: string, input: UpdateAgentInput): Promise<AgentListItem>;
   getAgentCredentials(id: string): Promise<AgentCredentialListItem[]>;
@@ -317,6 +321,11 @@ export function createWinAutApiClient(
         method: 'POST',
         body: input,
       }),
+    createAgentEnrollment: (id) =>
+      request<CreateAgentEnrollmentResponse>(
+        `/api/agents/${encodeURIComponent(id)}/enrollments`,
+        { method: 'POST' },
+      ),
     getAgent: (id) =>
       request<AgentListItem>(`/api/agents/${encodeURIComponent(id)}`),
     updateAgent: (id, input) =>

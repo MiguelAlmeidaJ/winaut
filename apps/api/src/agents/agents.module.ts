@@ -8,23 +8,27 @@ import { AgentsService } from './agents.service';
 
 import { AgentCredentialsController } from './credentials/agent-credentials.controller';
 import { AgentCredentialsService } from './credentials/agent-credentials.service';
+import { AgentEnrollmentController } from './enrollment/agent-enrollment.controller';
+import { AgentEnrollmentService } from './enrollment/agent-enrollment.service';
 
 @Module({
   imports: [DatabaseModule],
   controllers: [
     AgentsController,
-    AgentCredentialsController
+    AgentCredentialsController,
+    AgentEnrollmentController,
   ],
   providers: [
-    AgentsService, 
+    AgentsService,
     AgentCredentialsService,
-    AgentTokenService, 
+    AgentEnrollmentService,
+    AgentTokenService,
     AgentAuthGuard,
   ],
   exports: [
     AgentsService,
     AgentTokenService,
-    AgentAuthGuard
+    AgentAuthGuard,
   ],
 })
 export class AgentsModule {}

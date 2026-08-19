@@ -93,6 +93,7 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
           <AgentStatusBadge
             enabled={agent.enabled}
             online={agent.online}
+            lastSeenAt={agent.lastSeenAt}
           />
           <AgentLifecycleActions agent={agent} />
         </div>

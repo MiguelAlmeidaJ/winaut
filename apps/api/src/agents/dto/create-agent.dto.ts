@@ -15,10 +15,11 @@ export class CreateAgentDto {
   @MaxLength(150)
   name!: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(255)
-  hostname!: string;
+  hostname?: string;
 
   @IsOptional()
   @IsString()

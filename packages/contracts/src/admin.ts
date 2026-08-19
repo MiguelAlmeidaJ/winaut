@@ -213,7 +213,7 @@ export interface AgentListItem {
 export interface CreateAgentInput {
   winthorInstanceId: string;
   name: string;
-  hostname: string;
+  hostname?: string;
   version?: string;
 }
 
@@ -223,8 +223,17 @@ export interface UpdateAgentInput {
 
 export interface CreateAgentResponse {
   agent: AgentListItem;
-  credential: {
-    token: string;
+}
+
+export interface CreateAgentEnrollmentResponse {
+  agent: {
+    id: string;
+    name: string;
+    winthorInstanceId: string;
+  };
+  activation: {
+    code: string;
+    expiresAt: DateTimeString;
     warning: string;
   };
 }

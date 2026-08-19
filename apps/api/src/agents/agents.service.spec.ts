@@ -4,7 +4,6 @@ import { WinThorExecutionMode, WinThorHostingType } from '@winaut/contracts';
 import type { PrismaService } from '../database/prisma.service';
 import { AgentStatus } from '../generated/prisma/client';
 import type { AuthenticatedAgent } from './agent-auth.types';
-import type { AgentTokenService } from './agent-token.service';
 import { AgentsService } from './agents.service';
 
 const agent: AuthenticatedAgent = {
@@ -52,7 +51,6 @@ describe('AgentsService.getConfig', () => {
     });
     const service = new AgentsService(
       { db: { agent: { findFirst } } } as unknown as PrismaService,
-      {} as AgentTokenService,
       { get: jest.fn().mockReturnValue(180) } as unknown as ConfigService,
     );
 

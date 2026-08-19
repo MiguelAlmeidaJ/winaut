@@ -54,3 +54,7 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Windows Agent installer build artifacts
+apps/agent/installer/.payload/
+apps/agent/installer/out/

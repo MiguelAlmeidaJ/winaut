@@ -1,11 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import type { AgentConfig } from '@winaut/contracts';
 
 import { PrismaService } from '../database/prisma.service';
 import { AgentStatus } from '../generated/prisma/client';
 import type { AuthenticatedAgent } from './agent-auth.types';
-import { AgentTokenService } from './agent-token.service';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
@@ -17,7 +17,6 @@ export class AgentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly tokens: AgentTokenService,
     configService: ConfigService,
   ) {
     this.onlineThresholdMs =
@@ -47,17 +46,13 @@ export class AgentsService {
       });
     }
 
-    const token = this.tokens.generate();
     const created = await this.prisma.db.agent.create({
       data: {
         winthorInstanceId: dto.winthorInstanceId,
         name: dto.name,
-        hostname: dto.hostname,
+        hostname: dto.hostname?.trim() || `pending-${randomUUID()}`,
         version: dto.version,
         status: AgentStatus.OFFLINE,
-        credentials: {
-          create: { tokenHash: this.tokens.hash(token) },
-        },
       },
       include: { winthorInstance: { include: { company: true } } },
     });
@@ -68,11 +63,6 @@ export class AgentsService {
 
     return {
       agent: this.withTemporalStatus(created),
-      credential: {
-        token,
-        warning:
-          'Este token é exibido apenas nesta resposta; armazene-o com segurança.',
-      },
     };
   }
 

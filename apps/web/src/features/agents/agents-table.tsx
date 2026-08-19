@@ -88,7 +88,7 @@ export function AgentsTable() {
                   </Link>
                 </td>
                 <td className="px-5 py-4 font-mono text-xs text-[var(--muted)]">
-                  {agent.hostname}
+                  {agent.lastSeenAt ? agent.hostname : '—'}
                 </td>
                 <td className="px-5 py-4 text-[var(--muted)]">
                   {agent.version ?? '—'}
@@ -102,7 +102,11 @@ export function AgentsTable() {
                     : 'Nunca'}
                 </td>
                 <td className="px-5 py-4">
-                  <AgentStatusBadge enabled={agent.enabled} online={agent.online} />
+                  <AgentStatusBadge
+                    enabled={agent.enabled}
+                    online={agent.online}
+                    lastSeenAt={agent.lastSeenAt}
+                  />
                 </td>
               </tr>
             ))}
