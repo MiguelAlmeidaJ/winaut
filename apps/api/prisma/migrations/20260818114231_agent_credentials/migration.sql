@@ -20,4 +20,4 @@ ALTER TABLE `agent_credentials` DROP COLUMN `active`,
 CREATE INDEX `agent_credentials_agent_id_revoked_at_idx` ON `agent_credentials`(`agent_id`, `revoked_at`);
 
 -- AddForeignKey
-ALTER TABLE `winthor_instances` ADD CONSTRAINT `winthor_instances_company_id_fkey` FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_credentials` ADD CONSTRAINT `agent_credentials_agent_id_fkey` FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

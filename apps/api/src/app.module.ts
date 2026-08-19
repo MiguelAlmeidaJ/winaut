@@ -7,6 +7,7 @@ import { AgentsModule } from './agents/agents.module';
 import { AutomationRunsModule } from './automation-runs/automation-runs.module';
 import { AutomationSchedulerModule } from './automation-scheduler/automation-scheduler.module';
 import { AutomationSchedulesModule } from './automation-schedules/automation-schedules.module';
+import { AuthModule } from './auth/auth.module';
 import { CompaniesModule } from './companies/companies.module';
 import { HealthModule } from './health/health.module';
 import { WinThorInstancesModule } from './winthor-instances/winthor-instances.module';
@@ -21,6 +22,7 @@ import { WinThorAccessProfilesModule } from './winthor-access-profiles/winthor-a
 
     ScheduleModule.forRoot(),
 
+    AuthModule,
     HealthModule,
     CompaniesModule,
     WinThorInstancesModule,

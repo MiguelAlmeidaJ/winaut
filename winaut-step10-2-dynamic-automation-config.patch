@@ -1,0 +1,2412 @@
+diff --git a/apps/api/prisma/schema.prisma b/apps/api/prisma/schema.prisma
+--- a/apps/api/prisma/schema.prisma
++++ b/apps/api/prisma/schema.prisma
+@@ -89,6 +89,8 @@ model WinThorInstance {
+ 
+   company        Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+   accessProfiles WinThorAccessProfile[]
++  branches       WinThorBranch[]
++  automationConfigurations AutomationConfiguration[]
+   agents         Agent[]
+   schedules      AutomationSchedule[]
+   runs           AutomationRun[]
+@@ -119,4 +121,35 @@ model WinThorAccessProfile {
+   @@map("winthor_access_profiles")
+ }
+ 
++model WinThorBranch {
++  id                String   @id @default(uuid()) @db.Char(36)
++  winthorInstanceId String   @map("winthor_instance_id") @db.Char(36)
++  code              String   @db.VarChar(30)
++  name              String   @db.VarChar(150)
++  active            Boolean  @default(true)
++  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
++  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
++
++  winthorInstance WinThorInstance @relation(fields: [winthorInstanceId], references: [id], onDelete: Cascade)
++
++  @@unique([winthorInstanceId, code])
++  @@index([winthorInstanceId, active])
++  @@map("winthor_branches")
++}
++
++model AutomationConfiguration {
++  id                String   @id @default(uuid()) @db.Char(36)
++  winthorInstanceId String   @map("winthor_instance_id") @db.Char(36)
++  automationCode    String   @map("automation_code") @db.VarChar(50)
++  settings          Json
++  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
++  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
++
++  winthorInstance WinThorInstance @relation(fields: [winthorInstanceId], references: [id], onDelete: Cascade)
++
++  @@unique([winthorInstanceId, automationCode])
++  @@index([automationCode])
++  @@map("automation_configurations")
++}
++
+ model Agent {
+diff --git a/apps/api/prisma/migrations/20260819120000_dynamic_automation_configuration/migration.sql b/apps/api/prisma/migrations/20260819120000_dynamic_automation_configuration/migration.sql
+new file mode 100644
+--- /dev/null
++++ b/apps/api/prisma/migrations/20260819120000_dynamic_automation_configuration/migration.sql
+@@ -0,0 +1,60 @@
++-- CreateTable
++CREATE TABLE `winthor_branches` (
++    `id` CHAR(36) NOT NULL,
++    `winthor_instance_id` CHAR(36) NOT NULL,
++    `code` VARCHAR(30) NOT NULL,
++    `name` VARCHAR(150) NOT NULL,
++    `active` BOOLEAN NOT NULL DEFAULT true,
++    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
++    `updated_at` DATETIME(3) NOT NULL,
++
++    UNIQUE INDEX `winthor_branches_winthor_instance_id_code_key`(`winthor_instance_id`, `code`),
++    INDEX `winthor_branches_winthor_instance_id_active_idx`(`winthor_instance_id`, `active`),
++    PRIMARY KEY (`id`)
++) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
++
++-- CreateTable
++CREATE TABLE `automation_configurations` (
++    `id` CHAR(36) NOT NULL,
++    `winthor_instance_id` CHAR(36) NOT NULL,
++    `automation_code` VARCHAR(50) NOT NULL,
++    `settings` JSON NOT NULL,
++    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
++    `updated_at` DATETIME(3) NOT NULL,
++
++    UNIQUE INDEX `automation_configurations_winthor_instance_id_automation_code_key`(`winthor_instance_id`, `automation_code`),
++    INDEX `automation_configurations_automation_code_idx`(`automation_code`),
++    PRIMARY KEY (`id`)
++) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
++
++-- Seed the branches that were previously hardcoded by routine 507.
++-- Existing environments therefore keep generating the same 12 steps until
++-- an administrator changes the configuration in the panel.
++INSERT INTO `winthor_branches`
++    (`id`, `winthor_instance_id`, `code`, `name`, `active`, `created_at`, `updated_at`)
++SELECT
++    UUID(),
++    wi.`id`,
++    defaults.`code`,
++    defaults.`name`,
++    true,
++    CURRENT_TIMESTAMP(3),
++    CURRENT_TIMESTAMP(3)
++FROM `winthor_instances` wi
++CROSS JOIN (
++    SELECT '1' AS `code`, 'Filial 1' AS `name`
++    UNION ALL
++    SELECT '2' AS `code`, 'Filial 2' AS `name`
++) defaults;
++
++-- AddForeignKey
++ALTER TABLE `winthor_branches`
++ADD CONSTRAINT `winthor_branches_winthor_instance_id_fkey`
++FOREIGN KEY (`winthor_instance_id`) REFERENCES `winthor_instances`(`id`)
++ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE `automation_configurations`
++ADD CONSTRAINT `automation_configurations_winthor_instance_id_fkey`
++FOREIGN KEY (`winthor_instance_id`) REFERENCES `winthor_instances`(`id`)
++ON DELETE CASCADE ON UPDATE CASCADE;
+diff --git a/apps/api/src/app.module.ts b/apps/api/src/app.module.ts
+--- a/apps/api/src/app.module.ts
++++ b/apps/api/src/app.module.ts
+@@ -4,12 +4,14 @@
+ 
+ import { AgentJobsModule } from './agent-jobs/agent-jobs.module';
+ import { AgentsModule } from './agents/agents.module';
++import { AutomationConfigurationsModule } from './automation-configurations/automation-configurations.module';
+ import { AutomationRunsModule } from './automation-runs/automation-runs.module';
+ import { AutomationSchedulerModule } from './automation-scheduler/automation-scheduler.module';
+ import { AutomationSchedulesModule } from './automation-schedules/automation-schedules.module';
+ import { AuthModule } from './auth/auth.module';
+ import { CompaniesModule } from './companies/companies.module';
+ import { HealthModule } from './health/health.module';
++import { WinThorBranchesModule } from './winthor-branches/winthor-branches.module';
+ import { WinThorInstancesModule } from './winthor-instances/winthor-instances.module';
+ import { WinThorAccessProfilesModule } from './winthor-access-profiles/winthor-access-profiles.module';
+ 
+@@ -27,7 +29,9 @@
+     CompaniesModule,
+     WinThorInstancesModule,
+     WinThorAccessProfilesModule,
++    WinThorBranchesModule,
+     AgentsModule,
++    AutomationConfigurationsModule,
+     AutomationSchedulesModule,
+     AutomationRunsModule,
+     AgentJobsModule,
+diff --git a/apps/api/src/winthor-branches/dto/create-winthor-branch.dto.ts b/apps/api/src/winthor-branches/dto/create-winthor-branch.dto.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/winthor-branches/dto/create-winthor-branch.dto.ts
+@@ -0,0 +1,29 @@
++import {
++  IsBoolean,
++  IsOptional,
++  IsString,
++  IsUUID,
++  Matches,
++  MaxLength,
++  MinLength,
++} from 'class-validator';
++
++export class CreateWinThorBranchDto {
++  @IsUUID()
++  winthorInstanceId!: string;
++
++  @IsString()
++  @MinLength(1)
++  @MaxLength(30)
++  @Matches(/^(?=.*[A-Za-z0-9])[A-Za-z0-9._-]+$/)
++  code!: string;
++
++  @IsString()
++  @MinLength(1)
++  @MaxLength(150)
++  name!: string;
++
++  @IsOptional()
++  @IsBoolean()
++  active?: boolean;
++}
+diff --git a/apps/api/src/winthor-branches/dto/update-winthor-branch.dto.ts b/apps/api/src/winthor-branches/dto/update-winthor-branch.dto.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/winthor-branches/dto/update-winthor-branch.dto.ts
+@@ -0,0 +1,27 @@
++import {
++  IsBoolean,
++  IsOptional,
++  IsString,
++  Matches,
++  MaxLength,
++  MinLength,
++} from 'class-validator';
++
++export class UpdateWinThorBranchDto {
++  @IsOptional()
++  @IsString()
++  @MinLength(1)
++  @MaxLength(30)
++  @Matches(/^(?=.*[A-Za-z0-9])[A-Za-z0-9._-]+$/)
++  code?: string;
++
++  @IsOptional()
++  @IsString()
++  @MinLength(1)
++  @MaxLength(150)
++  name?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  active?: boolean;
++}
+diff --git a/apps/api/src/winthor-branches/dto/list-winthor-branches.dto.ts b/apps/api/src/winthor-branches/dto/list-winthor-branches.dto.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/winthor-branches/dto/list-winthor-branches.dto.ts
+@@ -0,0 +1,7 @@
++import { IsOptional, IsUUID } from 'class-validator';
++
++export class ListWinThorBranchesDto {
++  @IsOptional()
++  @IsUUID()
++  winthorInstanceId?: string;
++}
+diff --git a/apps/api/src/winthor-branches/winthor-branches.service.ts b/apps/api/src/winthor-branches/winthor-branches.service.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/winthor-branches/winthor-branches.service.ts
+@@ -0,0 +1,171 @@
++import {
++  ConflictException,
++  Injectable,
++  NotFoundException,
++} from '@nestjs/common';
++
++import { PrismaService } from '../database/prisma.service';
++import { Prisma } from '../generated/prisma/client';
++import { CreateWinThorBranchDto } from './dto/create-winthor-branch.dto';
++import { ListWinThorBranchesDto } from './dto/list-winthor-branches.dto';
++import { UpdateWinThorBranchDto } from './dto/update-winthor-branch.dto';
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++function selectedConfigurationReferencesBranch(
++  settings: unknown,
++  branchId: string,
++): boolean {
++  if (!isRecord(settings) || settings.branchMode !== 'SELECTED') {
++    return false;
++  }
++
++  return (
++    Array.isArray(settings.branchIds) &&
++    settings.branchIds.some((value) => value === branchId)
++  );
++}
++
++@Injectable()
++export class WinThorBranchesService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  async create(dto: CreateWinThorBranchDto) {
++    await this.assertInstance(dto.winthorInstanceId);
++
++    try {
++      return await this.prisma.db.winThorBranch.create({
++        data: {
++          winthorInstanceId: dto.winthorInstanceId,
++          code: dto.code.trim(),
++          name: dto.name.trim(),
++          active: dto.active ?? true,
++        },
++        include: {
++          winthorInstance: {
++            select: {
++              id: true,
++              name: true,
++              company: { select: { id: true, name: true } },
++            },
++          },
++        },
++      });
++    } catch (error) {
++      this.rethrowUnique(error);
++      throw error;
++    }
++  }
++
++  findAll(query: ListWinThorBranchesDto) {
++    return this.prisma.db.winThorBranch.findMany({
++      where: {
++        winthorInstanceId: query.winthorInstanceId,
++      },
++      orderBy: [
++        { winthorInstance: { company: { name: 'asc' } } },
++        { winthorInstance: { name: 'asc' } },
++        { code: 'asc' },
++      ],
++      include: {
++        winthorInstance: {
++          select: {
++            id: true,
++            name: true,
++            company: { select: { id: true, name: true } },
++          },
++        },
++      },
++    });
++  }
++
++  async update(id: string, dto: UpdateWinThorBranchDto) {
++    const branch = await this.prisma.db.winThorBranch.findUnique({
++      where: { id },
++    });
++
++    if (!branch) {
++      throw new NotFoundException({
++        code: 'WINTHOR_BRANCH_NOT_FOUND',
++        message: 'Filial WinThor não encontrada.',
++        id,
++      });
++    }
++
++    if (branch.active && dto.active === false) {
++      const configuration =
++        await this.prisma.db.automationConfiguration.findUnique({
++          where: {
++            winthorInstanceId_automationCode: {
++              winthorInstanceId: branch.winthorInstanceId,
++              automationCode: '507',
++            },
++          },
++          select: { settings: true },
++        });
++
++      if (
++        configuration &&
++        selectedConfigurationReferencesBranch(configuration.settings, branch.id)
++      ) {
++        throw new ConflictException({
++          code: 'WINTHOR_BRANCH_IN_USE',
++          message:
++            'Remova esta filial da configuração da rotina 507 antes de desativá-la.',
++        });
++      }
++    }
++
++    try {
++      return await this.prisma.db.winThorBranch.update({
++        where: { id },
++        data: {
++          ...(dto.code === undefined ? {} : { code: dto.code.trim() }),
++          ...(dto.name === undefined ? {} : { name: dto.name.trim() }),
++          ...(dto.active === undefined ? {} : { active: dto.active }),
++        },
++        include: {
++          winthorInstance: {
++            select: {
++              id: true,
++              name: true,
++              company: { select: { id: true, name: true } },
++            },
++          },
++        },
++      });
++    } catch (error) {
++      this.rethrowUnique(error);
++      throw error;
++    }
++  }
++
++  private async assertInstance(id: string): Promise<void> {
++    const instance = await this.prisma.db.winThorInstance.findUnique({
++      where: { id },
++      select: { id: true },
++    });
++
++    if (!instance) {
++      throw new NotFoundException({
++        code: 'WINTHOR_INSTANCE_NOT_FOUND',
++        message: 'Ambiente WinThor não encontrado.',
++        id,
++      });
++    }
++  }
++
++  private rethrowUnique(error: unknown): void {
++    if (
++      error instanceof Prisma.PrismaClientKnownRequestError &&
++      error.code === 'P2002'
++    ) {
++      throw new ConflictException({
++        code: 'WINTHOR_BRANCH_CODE_CONFLICT',
++        message: 'Já existe uma filial com este código no ambiente selecionado.',
++      });
++    }
++  }
++}
+diff --git a/apps/api/src/winthor-branches/winthor-branches.controller.ts b/apps/api/src/winthor-branches/winthor-branches.controller.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/winthor-branches/winthor-branches.controller.ts
+@@ -0,0 +1,38 @@
++import {
++  Body,
++  Controller,
++  Get,
++  Param,
++  ParseUUIDPipe,
++  Patch,
++  Post,
++  Query,
++} from '@nestjs/common';
++
++import { CreateWinThorBranchDto } from './dto/create-winthor-branch.dto';
++import { ListWinThorBranchesDto } from './dto/list-winthor-branches.dto';
++import { UpdateWinThorBranchDto } from './dto/update-winthor-branch.dto';
++import { WinThorBranchesService } from './winthor-branches.service';
++
++@Controller('winthor-branches')
++export class WinThorBranchesController {
++  constructor(private readonly branches: WinThorBranchesService) {}
++
++  @Post()
++  create(@Body() dto: CreateWinThorBranchDto) {
++    return this.branches.create(dto);
++  }
++
++  @Get()
++  findAll(@Query() query: ListWinThorBranchesDto) {
++    return this.branches.findAll(query);
++  }
++
++  @Patch(':id')
++  update(
++    @Param('id', new ParseUUIDPipe()) id: string,
++    @Body() dto: UpdateWinThorBranchDto,
++  ) {
++    return this.branches.update(id, dto);
++  }
++}
+diff --git a/apps/api/src/winthor-branches/winthor-branches.module.ts b/apps/api/src/winthor-branches/winthor-branches.module.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/winthor-branches/winthor-branches.module.ts
+@@ -0,0 +1,12 @@
++import { Module } from '@nestjs/common';
++
++import { DatabaseModule } from '../database/database.module';
++import { WinThorBranchesController } from './winthor-branches.controller';
++import { WinThorBranchesService } from './winthor-branches.service';
++
++@Module({
++  imports: [DatabaseModule],
++  controllers: [WinThorBranchesController],
++  providers: [WinThorBranchesService],
++})
++export class WinThorBranchesModule {}
+diff --git a/apps/api/src/automation-definitions/automation-definition.types.ts b/apps/api/src/automation-definitions/automation-definition.types.ts
+--- a/apps/api/src/automation-definitions/automation-definition.types.ts
++++ b/apps/api/src/automation-definitions/automation-definition.types.ts
+@@ -5,8 +5,29 @@
+   payload: Record<string, unknown>;
+ }
+ 
++export interface AutomationBranchDefinition {
++  id: string;
++  code: string;
++  name: string;
++}
++
++export type Routine507BranchMode = 'ALL_ACTIVE' | 'SELECTED';
++
++export interface Routine507Configuration {
++  branchMode: Routine507BranchMode;
++  branchIds: readonly string[];
++  turnoverMonths: readonly number[];
++  dailyTurnover: boolean;
++  salePrice: boolean;
++}
++
++export interface AutomationBuildInput {
++  branches: readonly AutomationBranchDefinition[];
++  configuration: unknown;
++}
++
+ export interface AutomationDefinition {
+   code: string;
+   name: string;
+-  steps: readonly AutomationStepDefinition[];
++  buildSteps(input: AutomationBuildInput): readonly AutomationStepDefinition[];
+ }
+diff --git a/apps/api/src/automation-definitions/routine-507.definition.ts b/apps/api/src/automation-definitions/routine-507.definition.ts
+--- a/apps/api/src/automation-definitions/routine-507.definition.ts
++++ b/apps/api/src/automation-definitions/routine-507.definition.ts
+@@ -1,67 +1,114 @@
+-import type { AutomationDefinition } from './automation-definition.types';
++import type {
++  AutomationDefinition,
++  AutomationStepDefinition,
++  Routine507Configuration,
++} from './automation-definition.types';
++
++function isRoutine507Configuration(
++  value: unknown,
++): value is Routine507Configuration {
++  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
++    return false;
++  }
++
++  const candidate = value as Record<string, unknown>;
++
++  return (
++    (candidate.branchMode === 'ALL_ACTIVE' ||
++      candidate.branchMode === 'SELECTED') &&
++    Array.isArray(candidate.branchIds) &&
++    candidate.branchIds.every((item) => typeof item === 'string') &&
++    Array.isArray(candidate.turnoverMonths) &&
++    candidate.turnoverMonths.every(
++      (item) => Number.isInteger(item) && Number(item) >= 0,
++    ) &&
++    typeof candidate.dailyTurnover === 'boolean' &&
++    typeof candidate.salePrice === 'boolean'
++  );
++}
++
++function codePart(value: string): string {
++  return value
++    .trim()
++    .toUpperCase()
++    .replace(/[^A-Z0-9]+/g, '_')
++    .replace(/^_+|_+$/g, '')
++    .slice(0, 30);
++}
++
++function branchLabel(code: string, name: string): string {
++  const defaultName = `Filial ${code}`;
++  return name.trim().toLocaleLowerCase('pt-BR') ===
++    defaultName.toLocaleLowerCase('pt-BR')
++    ? defaultName
++    : `${defaultName} · ${name}`;
++}
+ 
+ export const ROUTINE_507_DEFINITION: AutomationDefinition = {
+   code: '507',
+   name: 'Recálculos da rotina 507',
+-  steps: [
+-    ...[0, 1, 2, 3].flatMap((month, monthIndex) =>
+-      [1, 2].map((branch, branchIndex) => ({
+-        code: `RECALCULATE_TURNOVER_MONTH_${month}_BRANCH_${branch}`,
+-        name: `Giro Mercadorias Mês ${month} Filial ${branch}`,
+-        sequenceNumber: monthIndex * 2 + branchIndex + 1,
+-        payload: {
+-          action: 'RECALCULATE_MERCHANDISE_TURNOVER',
+-          routine: 507,
+-          month,
+-          branch,
+-        },
+-      })),
+-    ),
+-    {
+-      code: 'RECALCULATE_DAILY_TURNOVER_BRANCH_1',
+-      name: 'Opção 4 — Giro Dia — Filial 1',
+-      sequenceNumber: 9,
+-      payload: {
+-        action: 'RECALCULATE_DAILY_TURNOVER',
+-        routine: 507,
+-        option: 4,
+-        branch: 1,
+-      },
+-    },
+-    {
+-      code: 'RECALCULATE_DAILY_TURNOVER_BRANCH_2',
+-      name: 'Opção 4 — Giro Dia — Filial 2',
+-      sequenceNumber: 10,
+-      payload: {
+-        action: 'RECALCULATE_DAILY_TURNOVER',
+-        routine: 507,
+-        option: 4,
+-        branch: 2,
+-      },
+-    },
+-    {
+-      code: 'RECALCULATE_SALE_PRICE_BRANCH_1',
+-      name: 'Opção 14 — Preço de Venda — Compras/Vendas — Filial 1',
+-      sequenceNumber: 11,
+-      payload: {
+-        action: 'RECALCULATE_SALE_PRICE',
+-        routine: 507,
+-        option: 14,
+-        tab: 'PURCHASES_SALES',
+-        branch: 1,
+-      },
+-    },
+-    {
+-      code: 'RECALCULATE_SALE_PRICE_BRANCH_2',
+-      name: 'Opção 14 — Preço de Venda — Compras/Vendas — Filial 2',
+-      sequenceNumber: 12,
+-      payload: {
+-        action: 'RECALCULATE_SALE_PRICE',
+-        routine: 507,
+-        option: 14,
+-        tab: 'PURCHASES_SALES',
+-        branch: 2,
+-      },
+-    },
+-  ],
++  buildSteps({ branches, configuration }) {
++    if (!isRoutine507Configuration(configuration)) {
++      throw new Error('Invalid routine 507 configuration.');
++    }
++
++    let sequenceNumber = 1;
++    const steps: AutomationStepDefinition[] = [];
++
++    for (const month of [...configuration.turnoverMonths].sort(
++      (left, right) => left - right,
++    )) {
++      for (const branch of branches) {
++        steps.push({
++          code: `RECALCULATE_TURNOVER_MONTH_${month}_BRANCH_${codePart(branch.code)}`,
++          name: `Giro Mercadorias Mês ${month} — ${branchLabel(branch.code, branch.name)}`,
++          sequenceNumber: sequenceNumber++,
++          payload: {
++            action: 'RECALCULATE_MERCHANDISE_TURNOVER',
++            routine: 507,
++            month,
++            branch: branch.code,
++            branchName: branch.name,
++          },
++        });
++      }
++    }
++
++    if (configuration.dailyTurnover) {
++      for (const branch of branches) {
++        steps.push({
++          code: `RECALCULATE_DAILY_TURNOVER_BRANCH_${codePart(branch.code)}`,
++          name: `Opção 4 — Giro Dia — ${branchLabel(branch.code, branch.name)}`,
++          sequenceNumber: sequenceNumber++,
++          payload: {
++            action: 'RECALCULATE_DAILY_TURNOVER',
++            routine: 507,
++            option: 4,
++            branch: branch.code,
++            branchName: branch.name,
++          },
++        });
++      }
++    }
++
++    if (configuration.salePrice) {
++      for (const branch of branches) {
++        steps.push({
++          code: `RECALCULATE_SALE_PRICE_BRANCH_${codePart(branch.code)}`,
++          name: `Opção 14 — Preço de Venda — Compras/Vendas — ${branchLabel(branch.code, branch.name)}`,
++          sequenceNumber: sequenceNumber++,
++          payload: {
++            action: 'RECALCULATE_SALE_PRICE',
++            routine: 507,
++            option: 14,
++            tab: 'PURCHASES_SALES',
++            branch: branch.code,
++            branchName: branch.name,
++          },
++        });
++      }
++    }
++
++    return steps;
++  },
+ };
+diff --git a/apps/api/src/automation-definitions/routine-552.definition.ts b/apps/api/src/automation-definitions/routine-552.definition.ts
+--- a/apps/api/src/automation-definitions/routine-552.definition.ts
++++ b/apps/api/src/automation-definitions/routine-552.definition.ts
+@@ -3,15 +3,17 @@
+ export const ROUTINE_552_DEFINITION: AutomationDefinition = {
+   code: '552',
+   name: 'Execução da rotina 552',
+-  steps: [
+-    {
+-      code: 'EXECUTE_ROUTINE_552',
+-      name: 'Executar rotina 552',
+-      sequenceNumber: 1,
+-      payload: {
+-        routine: 552,
+-        preserveExistingConfiguration: true,
++  buildSteps() {
++    return [
++      {
++        code: 'EXECUTE_ROUTINE_552',
++        name: 'Executar rotina 552',
++        sequenceNumber: 1,
++        payload: {
++          routine: 552,
++          preserveExistingConfiguration: true,
++        },
+       },
+-    },
+-  ],
++    ];
++  },
+ };
+diff --git a/apps/api/src/automation-definitions/automation-definition.registry.spec.ts b/apps/api/src/automation-definitions/automation-definition.registry.spec.ts
+--- a/apps/api/src/automation-definitions/automation-definition.registry.spec.ts
++++ b/apps/api/src/automation-definitions/automation-definition.registry.spec.ts
+@@ -3,20 +3,58 @@
+ describe('AutomationDefinitionRegistry', () => {
+   const registry = new AutomationDefinitionRegistry();
+ 
+-  it('keeps routine 507 declarative with exactly 12 ordered steps', () => {
++  it('builds the legacy 12 routine 507 steps from two configured branches', () => {
+     const definition = registry.get('507');
++    const steps = definition.buildSteps({
++      branches: [
++        { id: 'branch-1', code: '1', name: 'Filial 1' },
++        { id: 'branch-2', code: '2', name: 'Filial 2' },
++      ],
++      configuration: {
++        branchMode: 'ALL_ACTIVE',
++        branchIds: [],
++        turnoverMonths: [0, 1, 2, 3],
++        dailyTurnover: true,
++        salePrice: true,
++      },
++    });
+ 
+-    expect(definition.steps).toHaveLength(12);
+-    expect(definition.steps.map((step) => step.sequenceNumber)).toEqual([
++    expect(steps).toHaveLength(12);
++    expect(steps.map((step) => step.sequenceNumber)).toEqual([
+       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+     ]);
+   });
+ 
++  it('adds all configured routine 507 work for a third branch without code changes', () => {
++    const definition = registry.get('507');
++    const steps = definition.buildSteps({
++      branches: [
++        { id: 'branch-1', code: '1', name: 'Matriz' },
++        { id: 'branch-2', code: '2', name: 'CD' },
++        { id: 'branch-3', code: '3', name: 'Loja Norte' },
++      ],
++      configuration: {
++        branchMode: 'ALL_ACTIVE',
++        branchIds: [],
++        turnoverMonths: [0, 1, 2, 3],
++        dailyTurnover: true,
++        salePrice: true,
++      },
++    });
++
++    expect(steps).toHaveLength(18);
++    expect(steps.some((step) => step.code.endsWith('BRANCH_3'))).toBe(true);
++  });
++
+   it('keeps routine 552 as one non-mutating execution step', () => {
+     const definition = registry.get('552');
++    const steps = definition.buildSteps({
++      branches: [],
++      configuration: null,
++    });
+ 
+-    expect(definition.steps).toHaveLength(1);
+-    expect(definition.steps[0].payload).toMatchObject({
++    expect(steps).toHaveLength(1);
++    expect(steps[0].payload).toMatchObject({
+       preserveExistingConfiguration: true,
+     });
+   });
+diff --git a/apps/api/src/automation-configurations/dto/routine-507-configuration.dto.ts b/apps/api/src/automation-configurations/dto/routine-507-configuration.dto.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/automation-configurations/dto/routine-507-configuration.dto.ts
+@@ -0,0 +1,37 @@
++import {
++  ArrayUnique,
++  IsArray,
++  IsBoolean,
++  IsIn,
++  IsInt,
++  IsString,
++  IsUUID,
++  Max,
++  Min,
++} from 'class-validator';
++
++import type { Routine507BranchMode } from '../../automation-definitions/automation-definition.types';
++
++export class Routine507ConfigurationDto {
++  @IsString()
++  @IsIn(['ALL_ACTIVE', 'SELECTED'])
++  branchMode!: Routine507BranchMode;
++
++  @IsArray()
++  @ArrayUnique()
++  @IsUUID('4', { each: true })
++  branchIds!: string[];
++
++  @IsArray()
++  @ArrayUnique()
++  @IsInt({ each: true })
++  @Min(0, { each: true })
++  @Max(11, { each: true })
++  turnoverMonths!: number[];
++
++  @IsBoolean()
++  dailyTurnover!: boolean;
++
++  @IsBoolean()
++  salePrice!: boolean;
++}
+diff --git a/apps/api/src/automation-configurations/automation-configurations.service.ts b/apps/api/src/automation-configurations/automation-configurations.service.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/automation-configurations/automation-configurations.service.ts
+@@ -0,0 +1,353 @@
++import {
++  ConflictException,
++  Injectable,
++  NotFoundException,
++} from '@nestjs/common';
++
++import { AutomationDefinitionRegistry } from '../automation-definitions/automation-definition.registry';
++import type {
++  AutomationBranchDefinition,
++  AutomationStepDefinition,
++  Routine507Configuration,
++} from '../automation-definitions/automation-definition.types';
++import { PrismaService } from '../database/prisma.service';
++import { Prisma } from '../generated/prisma/client';
++import { Routine507ConfigurationDto } from './dto/routine-507-configuration.dto';
++
++type DatabaseClient = Prisma.TransactionClient | PrismaService['db'];
++
++interface BranchRecord extends AutomationBranchDefinition {
++  active: boolean;
++}
++
++const DEFAULT_507: Routine507Configuration = {
++  branchMode: 'ALL_ACTIVE',
++  branchIds: [],
++  turnoverMonths: [0, 1, 2, 3],
++  dailyTurnover: true,
++  salePrice: true,
++};
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++@Injectable()
++export class AutomationConfigurationsService {
++  constructor(
++    private readonly prisma: PrismaService,
++    private readonly definitions: AutomationDefinitionRegistry,
++  ) {}
++
++  getRoutine507(winthorInstanceId: string) {
++    return this.getRoutine507WithClient(this.prisma.db, winthorInstanceId);
++  }
++
++  async saveRoutine507(
++    winthorInstanceId: string,
++    dto: Routine507ConfigurationDto,
++  ) {
++    const branches = await this.loadBranches(
++      this.prisma.db,
++      winthorInstanceId,
++    );
++    const configuration = this.normalize507(dto);
++    this.validate507(configuration, branches);
++
++    await this.prisma.db.automationConfiguration.upsert({
++      where: {
++        winthorInstanceId_automationCode: {
++          winthorInstanceId,
++          automationCode: '507',
++        },
++      },
++      create: {
++        winthorInstanceId,
++        automationCode: '507',
++        settings: configuration as unknown as Prisma.InputJsonValue,
++      },
++      update: {
++        settings: configuration as unknown as Prisma.InputJsonValue,
++      },
++    });
++
++    return this.getRoutine507WithClient(
++      this.prisma.db,
++      winthorInstanceId,
++    );
++  }
++
++  async previewRoutine507(
++    winthorInstanceId: string,
++    dto: Routine507ConfigurationDto,
++  ) {
++    const branches = await this.loadBranches(
++      this.prisma.db,
++      winthorInstanceId,
++    );
++    const configuration = this.normalize507(dto);
++    this.validate507(configuration, branches);
++
++    return {
++      configuration,
++      preview: this.build507Steps(configuration, branches),
++    };
++  }
++
++  async resetRoutine507(winthorInstanceId: string) {
++    await this.assertInstance(this.prisma.db, winthorInstanceId);
++
++    await this.prisma.db.automationConfiguration.deleteMany({
++      where: {
++        winthorInstanceId,
++        automationCode: '507',
++      },
++    });
++
++    return this.getRoutine507WithClient(
++      this.prisma.db,
++      winthorInstanceId,
++    );
++  }
++
++  async buildStepsForRun(
++    client: DatabaseClient,
++    winthorInstanceId: string,
++    automationCode: string,
++  ): Promise<readonly AutomationStepDefinition[]> {
++    const definition = this.definitions.get(automationCode);
++
++    if (automationCode !== '507') {
++      return definition.buildSteps({
++        branches: [],
++        configuration: null,
++      });
++    }
++
++    const branches = await this.loadBranches(client, winthorInstanceId);
++    const saved = await client.automationConfiguration.findUnique({
++      where: {
++        winthorInstanceId_automationCode: {
++          winthorInstanceId,
++          automationCode: '507',
++        },
++      },
++      select: { settings: true },
++    });
++
++    const configuration = saved
++      ? this.parse507(saved.settings)
++      : { ...DEFAULT_507, branchIds: [], turnoverMonths: [0, 1, 2, 3] };
++
++    this.validate507(configuration, branches);
++
++    const steps = this.build507Steps(configuration, branches);
++
++    if (steps.length === 0) {
++      throw new ConflictException({
++        code: 'AUTOMATION_CONFIGURATION_EMPTY',
++        message:
++          'A configuração da rotina 507 não gerou etapas para execução.',
++      });
++    }
++
++    return steps;
++  }
++
++  private async getRoutine507WithClient(
++    client: DatabaseClient,
++    winthorInstanceId: string,
++  ) {
++    const branches = await this.loadBranches(client, winthorInstanceId);
++    const saved = await client.automationConfiguration.findUnique({
++      where: {
++        winthorInstanceId_automationCode: {
++          winthorInstanceId,
++          automationCode: '507',
++        },
++      },
++      select: {
++        id: true,
++        settings: true,
++        updatedAt: true,
++      },
++    });
++
++    const configuration = saved
++      ? this.parse507(saved.settings)
++      : { ...DEFAULT_507, branchIds: [], turnoverMonths: [0, 1, 2, 3] };
++
++    return {
++      winthorInstanceId,
++      automationCode: '507' as const,
++      source: saved ? ('SAVED' as const) : ('DEFAULT' as const),
++      configuration,
++      branches,
++      preview: this.build507Steps(configuration, branches),
++      updatedAt: saved?.updatedAt ?? null,
++    };
++  }
++
++  private build507Steps(
++    configuration: Routine507Configuration,
++    branches: readonly BranchRecord[],
++  ) {
++    const selected = this.selectedBranches(configuration, branches);
++    const definition = this.definitions.get('507');
++
++    return definition.buildSteps({
++      branches: selected,
++      configuration,
++    });
++  }
++
++  private selectedBranches(
++    configuration: Routine507Configuration,
++    branches: readonly BranchRecord[],
++  ): readonly BranchRecord[] {
++    const active = branches.filter((branch) => branch.active);
++
++    if (configuration.branchMode === 'ALL_ACTIVE') {
++      return active;
++    }
++
++    const selectedIds = new Set(configuration.branchIds);
++    return active.filter((branch) => selectedIds.has(branch.id));
++  }
++
++  private validate507(
++    configuration: Routine507Configuration,
++    branches: readonly BranchRecord[],
++  ): void {
++    const active = branches.filter((branch) => branch.active);
++
++    if (configuration.branchMode === 'ALL_ACTIVE' && active.length === 0) {
++      throw new ConflictException({
++        code: 'AUTOMATION_CONFIGURATION_NO_ACTIVE_BRANCHES',
++        message:
++          'Cadastre e ative pelo menos uma filial antes de executar a rotina 507.',
++      });
++    }
++
++    if (configuration.branchMode === 'SELECTED') {
++      if (configuration.branchIds.length === 0) {
++        throw new ConflictException({
++          code: 'AUTOMATION_CONFIGURATION_BRANCH_REQUIRED',
++          message: 'Selecione pelo menos uma filial para a rotina 507.',
++        });
++      }
++
++      const activeIds = new Set(active.map((branch) => branch.id));
++      const invalid = configuration.branchIds.filter(
++        (branchId) => !activeIds.has(branchId),
++      );
++
++      if (invalid.length > 0) {
++        throw new ConflictException({
++          code: 'AUTOMATION_CONFIGURATION_BRANCH_INVALID',
++          message:
++            'A configuração contém filial inexistente ou desativada.',
++          branchIds: invalid,
++        });
++      }
++    }
++
++    if (
++      configuration.turnoverMonths.length === 0 &&
++      !configuration.dailyTurnover &&
++      !configuration.salePrice
++    ) {
++      throw new ConflictException({
++        code: 'AUTOMATION_CONFIGURATION_OPERATION_REQUIRED',
++        message:
++          'Habilite pelo menos um recálculo para a rotina 507.',
++      });
++    }
++  }
++
++  private normalize507(
++    dto: Routine507ConfigurationDto,
++  ): Routine507Configuration {
++    return {
++      branchMode: dto.branchMode,
++      branchIds:
++        dto.branchMode === 'ALL_ACTIVE' ? [] : [...dto.branchIds],
++      turnoverMonths: [...dto.turnoverMonths].sort(
++        (left, right) => left - right,
++      ),
++      dailyTurnover: dto.dailyTurnover,
++      salePrice: dto.salePrice,
++    };
++  }
++
++  private parse507(value: unknown): Routine507Configuration {
++    if (!isRecord(value)) {
++      return { ...DEFAULT_507, branchIds: [], turnoverMonths: [0, 1, 2, 3] };
++    }
++
++    const branchMode =
++      value.branchMode === 'SELECTED' ? 'SELECTED' : 'ALL_ACTIVE';
++    const branchIds = Array.isArray(value.branchIds)
++      ? value.branchIds.filter(
++          (item): item is string => typeof item === 'string',
++        )
++      : [];
++    const turnoverMonths = Array.isArray(value.turnoverMonths)
++      ? value.turnoverMonths.filter(
++          (item): item is number =>
++            typeof item === 'number' &&
++            Number.isInteger(item) &&
++            item >= 0 &&
++            item <= 11,
++        )
++      : [0, 1, 2, 3];
++
++    return {
++      branchMode,
++      branchIds: branchMode === 'ALL_ACTIVE' ? [] : branchIds,
++      turnoverMonths,
++      dailyTurnover:
++        typeof value.dailyTurnover === 'boolean'
++          ? value.dailyTurnover
++          : true,
++      salePrice:
++        typeof value.salePrice === 'boolean' ? value.salePrice : true,
++    };
++  }
++
++  private async loadBranches(
++    client: DatabaseClient,
++    winthorInstanceId: string,
++  ): Promise<BranchRecord[]> {
++    await this.assertInstance(client, winthorInstanceId);
++
++    return client.winThorBranch.findMany({
++      where: { winthorInstanceId },
++      orderBy: { code: 'asc' },
++      select: {
++        id: true,
++        code: true,
++        name: true,
++        active: true,
++      },
++    });
++  }
++
++  private async assertInstance(
++    client: DatabaseClient,
++    id: string,
++  ): Promise<void> {
++    const instance = await client.winThorInstance.findUnique({
++      where: { id },
++      select: { id: true },
++    });
++
++    if (!instance) {
++      throw new NotFoundException({
++        code: 'WINTHOR_INSTANCE_NOT_FOUND',
++        message: 'Ambiente WinThor não encontrado.',
++        id,
++      });
++    }
++  }
++}
+diff --git a/apps/api/src/automation-configurations/automation-configurations.controller.ts b/apps/api/src/automation-configurations/automation-configurations.controller.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/automation-configurations/automation-configurations.controller.ts
+@@ -0,0 +1,57 @@
++import {
++  Body,
++  Controller,
++  Delete,
++  Get,
++  Param,
++  ParseUUIDPipe,
++  Post,
++  Put,
++} from '@nestjs/common';
++
++import { AutomationConfigurationsService } from './automation-configurations.service';
++import { Routine507ConfigurationDto } from './dto/routine-507-configuration.dto';
++
++@Controller('automation-configurations')
++export class AutomationConfigurationsController {
++  constructor(
++    private readonly configurations: AutomationConfigurationsService,
++  ) {}
++
++  @Get(':winthorInstanceId/507')
++  getRoutine507(
++    @Param('winthorInstanceId', new ParseUUIDPipe())
++    winthorInstanceId: string,
++  ) {
++    return this.configurations.getRoutine507(winthorInstanceId);
++  }
++
++  @Put(':winthorInstanceId/507')
++  saveRoutine507(
++    @Param('winthorInstanceId', new ParseUUIDPipe())
++    winthorInstanceId: string,
++    @Body() dto: Routine507ConfigurationDto,
++  ) {
++    return this.configurations.saveRoutine507(winthorInstanceId, dto);
++  }
++
++  @Post(':winthorInstanceId/507/preview')
++  previewRoutine507(
++    @Param('winthorInstanceId', new ParseUUIDPipe())
++    winthorInstanceId: string,
++    @Body() dto: Routine507ConfigurationDto,
++  ) {
++    return this.configurations.previewRoutine507(
++      winthorInstanceId,
++      dto,
++    );
++  }
++
++  @Delete(':winthorInstanceId/507')
++  resetRoutine507(
++    @Param('winthorInstanceId', new ParseUUIDPipe())
++    winthorInstanceId: string,
++  ) {
++    return this.configurations.resetRoutine507(winthorInstanceId);
++  }
++}
+diff --git a/apps/api/src/automation-configurations/automation-configurations.module.ts b/apps/api/src/automation-configurations/automation-configurations.module.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/api/src/automation-configurations/automation-configurations.module.ts
+@@ -0,0 +1,14 @@
++import { Module } from '@nestjs/common';
++
++import { AutomationDefinitionsModule } from '../automation-definitions/automation-definitions.module';
++import { DatabaseModule } from '../database/database.module';
++import { AutomationConfigurationsController } from './automation-configurations.controller';
++import { AutomationConfigurationsService } from './automation-configurations.service';
++
++@Module({
++  imports: [DatabaseModule, AutomationDefinitionsModule],
++  controllers: [AutomationConfigurationsController],
++  providers: [AutomationConfigurationsService],
++  exports: [AutomationConfigurationsService],
++})
++export class AutomationConfigurationsModule {}
+diff --git a/apps/api/src/automation-runs/automation-runs.module.ts b/apps/api/src/automation-runs/automation-runs.module.ts
+--- a/apps/api/src/automation-runs/automation-runs.module.ts
++++ b/apps/api/src/automation-runs/automation-runs.module.ts
+@@ -1,12 +1,12 @@
+ import { Module } from '@nestjs/common';
+ 
+-import { AutomationDefinitionsModule } from '../automation-definitions/automation-definitions.module';
++import { AutomationConfigurationsModule } from '../automation-configurations/automation-configurations.module';
+ import { DatabaseModule } from '../database/database.module';
+ import { AutomationRunsController } from './automation-runs.controller';
+ import { AutomationRunsService } from './automation-runs.service';
+ 
+ @Module({
+-  imports: [DatabaseModule, AutomationDefinitionsModule],
++  imports: [DatabaseModule, AutomationConfigurationsModule],
+   controllers: [AutomationRunsController],
+   providers: [AutomationRunsService],
+   exports: [AutomationRunsService],
+diff --git a/apps/api/src/automation-runs/automation-runs.service.ts b/apps/api/src/automation-runs/automation-runs.service.ts
+--- a/apps/api/src/automation-runs/automation-runs.service.ts
++++ b/apps/api/src/automation-runs/automation-runs.service.ts
+@@ -1,7 +1,7 @@
+ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+ import { randomUUID } from 'node:crypto';
+ 
+-import { AutomationDefinitionRegistry } from '../automation-definitions/automation-definition.registry';
++import { AutomationConfigurationsService } from '../automation-configurations/automation-configurations.service';
+ import { PrismaService } from '../database/prisma.service';
+ import { ListAutomationRunsDto } from './dto/list-automation-runs.dto';
+ import {
+@@ -22,7 +22,7 @@
+ 
+   constructor(
+     private readonly prisma: PrismaService,
+-    private readonly definitions: AutomationDefinitionRegistry,
++    private readonly configurations: AutomationConfigurationsService,
+   ) {}
+ 
+   createScheduledRun(
+@@ -131,13 +131,17 @@
+     return `schedule:${scheduleId}:${scheduledFor.toISOString()}`;
+   }
+ 
+-  private createRun(
++  private async createRun(
+     client: Prisma.TransactionClient | PrismaService['db'],
+     schedule: RunSource,
+     deduplicationKey: string,
+     scheduledFor: Date | null,
+   ) {
+-    const definition = this.definitions.get(schedule.automationCode);
++    const steps = await this.configurations.buildStepsForRun(
++      client,
++      schedule.winthorInstanceId,
++      schedule.automationCode,
++    );
+     const now = new Date();
+ 
+     return client.automationRun.create({
+@@ -150,7 +154,7 @@
+         scheduledFor,
+         startedAt: now,
+         steps: {
+-          create: definition.steps.map((step) => ({
++          create: steps.map((step) => ({
+             code: step.code,
+             name: step.name,
+             sequenceNumber: step.sequenceNumber,
+diff --git a/packages/contracts/src/admin.ts b/packages/contracts/src/admin.ts
+--- a/packages/contracts/src/admin.ts
++++ b/packages/contracts/src/admin.ts
+@@ -296,4 +296,78 @@ export interface AutomationRunDetail extends AutomationRunListItem {
+   steps: AutomationStepItem[];
+ }
+ 
++export interface WinThorBranchItem {
++  id: string;
++  winthorInstanceId: string;
++  code: string;
++  name: string;
++  active: boolean;
++  createdAt: DateTimeString;
++  updatedAt: DateTimeString;
++  winthorInstance: {
++    id: string;
++    name: string;
++    company: {
++      id: string;
++      name: string;
++    };
++  };
++}
++
++export interface CreateWinThorBranchInput {
++  winthorInstanceId: string;
++  code: string;
++  name: string;
++  active?: boolean;
++}
++
++export interface UpdateWinThorBranchInput {
++  code?: string;
++  name?: string;
++  active?: boolean;
++}
++
++export const Routine507BranchMode = {
++  ALL_ACTIVE: 'ALL_ACTIVE',
++  SELECTED: 'SELECTED',
++} as const;
++
++export type Routine507BranchMode =
++  (typeof Routine507BranchMode)[keyof typeof Routine507BranchMode];
++
++export interface Routine507Configuration {
++  branchMode: Routine507BranchMode;
++  branchIds: string[];
++  turnoverMonths: number[];
++  dailyTurnover: boolean;
++  salePrice: boolean;
++}
++
++export interface AutomationStepPreview {
++  code: string;
++  name: string;
++  sequenceNumber: number;
++  payload: Record<string, unknown>;
++}
++
++export interface Routine507ConfigurationView {
++  winthorInstanceId: string;
++  automationCode: '507';
++  source: 'DEFAULT' | 'SAVED';
++  configuration: Routine507Configuration;
++  branches: Array<{
++    id: string;
++    code: string;
++    name: string;
++    active: boolean;
++  }>;
++  preview: AutomationStepPreview[];
++  updatedAt: DateTimeString | null;
++}
++
++export interface Routine507PreviewResponse {
++  configuration: Routine507Configuration;
++  preview: AutomationStepPreview[];
++}
++
+ export interface HealthResponse {
+diff --git a/packages/api-client/src/index.ts b/packages/api-client/src/index.ts
+--- a/packages/api-client/src/index.ts
++++ b/packages/api-client/src/index.ts
+@@ -1,8 +1,13 @@
+ import type {
+   AdminSessionResponse,
+   AdminUser,
++  CreateWinThorBranchInput,
+   AgentCredentialListItem,
+   AgentListItem,
+   LoginInput,
+   LogoutResponse,
++  Routine507Configuration,
++  Routine507ConfigurationView,
++  Routine507PreviewResponse,
++  UpdateWinThorBranchInput,
+   CompanyDetail,
+@@ -27,2 +31,3 @@ import type {
+   WinThorAccessProfileItem,
++  WinThorBranchItem,
+   WinThorInstanceDetail,
+@@ -48,4 +53,24 @@ export interface WinAutApiClient {
+   login(input: LoginInput): Promise<AdminSessionResponse>;
+   logout(): Promise<LogoutResponse>;
+   getCurrentAdmin(): Promise<AdminUser>;
++  getWinThorBranches(winthorInstanceId?: string): Promise<WinThorBranchItem[]>;
++  createWinThorBranch(input: CreateWinThorBranchInput): Promise<WinThorBranchItem>;
++  updateWinThorBranch(
++    id: string,
++    input: UpdateWinThorBranchInput,
++  ): Promise<WinThorBranchItem>;
++  getRoutine507Configuration(
++    winthorInstanceId: string,
++  ): Promise<Routine507ConfigurationView>;
++  saveRoutine507Configuration(
++    winthorInstanceId: string,
++    input: Routine507Configuration,
++  ): Promise<Routine507ConfigurationView>;
++  previewRoutine507Configuration(
++    winthorInstanceId: string,
++    input: Routine507Configuration,
++  ): Promise<Routine507PreviewResponse>;
++  resetRoutine507Configuration(
++    winthorInstanceId: string,
++  ): Promise<Routine507ConfigurationView>;
+   getHealth(): Promise<HealthResponse>;
+@@ -176,3 +199,42 @@ export function createWinAutApiClient(
+       }),
+     getCurrentAdmin: () => request<AdminUser>('/api/auth/me'),
++    getWinThorBranches: (winthorInstanceId) => {
++      const search = new URLSearchParams();
++      if (winthorInstanceId) {
++        search.set('winthorInstanceId', winthorInstanceId);
++      }
++      const query = search.toString();
++      return request<WinThorBranchItem[]>(
++        `/api/winthor-branches${query ? `?${query}` : ''}`,
++      );
++    },
++    createWinThorBranch: (input) =>
++      request<WinThorBranchItem>('/api/winthor-branches', {
++        method: 'POST',
++        body: input,
++      }),
++    updateWinThorBranch: (id, input) =>
++      request<WinThorBranchItem>(
++        `/api/winthor-branches/${encodeURIComponent(id)}`,
++        { method: 'PATCH', body: input },
++      ),
++    getRoutine507Configuration: (winthorInstanceId) =>
++      request<Routine507ConfigurationView>(
++        `/api/automation-configurations/${encodeURIComponent(winthorInstanceId)}/507`,
++      ),
++    saveRoutine507Configuration: (winthorInstanceId, input) =>
++      request<Routine507ConfigurationView>(
++        `/api/automation-configurations/${encodeURIComponent(winthorInstanceId)}/507`,
++        { method: 'PUT', body: input },
++      ),
++    previewRoutine507Configuration: (winthorInstanceId, input) =>
++      request<Routine507PreviewResponse>(
++        `/api/automation-configurations/${encodeURIComponent(winthorInstanceId)}/507/preview`,
++        { method: 'POST', body: input },
++      ),
++    resetRoutine507Configuration: (winthorInstanceId) =>
++      request<Routine507ConfigurationView>(
++        `/api/automation-configurations/${encodeURIComponent(winthorInstanceId)}/507`,
++        { method: 'DELETE' },
++      ),
+     getHealth: () => request<HealthResponse>('/api/health'),
+@@ -103,6 +103,6 @@ function errorMessage(payload: ApiErrorPayload, status: number): string {
+ }
+ 
+ interface RequestOptions {
+-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
++  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+   body?: unknown;
+ }
+diff --git a/apps/web/src/components/layout/sidebar.tsx b/apps/web/src/components/layout/sidebar.tsx
+--- a/apps/web/src/components/layout/sidebar.tsx
++++ b/apps/web/src/components/layout/sidebar.tsx
+@@ -29,6 +29,7 @@
+   {
+     label: 'Automação',
+     items: [
++      { href: '/automation-configurations', label: 'Configurações' },
+       { href: '/schedules', label: 'Agendamentos' },
+       { href: '/runs', label: 'Execuções' },
+     ],
+diff --git a/apps/web/src/components/layout/mobile-nav.tsx b/apps/web/src/components/layout/mobile-nav.tsx
+--- a/apps/web/src/components/layout/mobile-nav.tsx
++++ b/apps/web/src/components/layout/mobile-nav.tsx
+@@ -8,6 +8,7 @@
+   { href: '/companies', label: 'Empresas' },
+   { href: '/winthor-instances', label: 'Ambientes' },
+   { href: '/agents', label: 'Agents' },
++  { href: '/automation-configurations', label: 'Config.' },
+   { href: '/schedules', label: 'Agendamentos' },
+   { href: '/runs', label: 'Execuções' },
+ ] as const;
+diff --git a/apps/web/src/components/layout/app-shell.tsx b/apps/web/src/components/layout/app-shell.tsx
+--- a/apps/web/src/components/layout/app-shell.tsx
++++ b/apps/web/src/components/layout/app-shell.tsx
+@@ -17,5 +17,6 @@ const routeNames = [
+   { prefix: '/winthor-instances', label: 'Ambientes WinThor' },
+   { prefix: '/agents', label: 'Agents' },
++  { prefix: '/automation-configurations', label: 'Configurações' },
+   { prefix: '/schedules', label: 'Agendamentos' },
+   { prefix: '/runs', label: 'Execuções' },
+ ] as const;
+diff --git a/apps/web/src/app/automation-configurations/page.tsx b/apps/web/src/app/automation-configurations/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/app/automation-configurations/page.tsx
+@@ -0,0 +1,14 @@
++import { PageHeader } from '@/components/ui/page-header';
++import { AutomationConfigurationsView } from '@/features/automation-configurations/automation-configurations-view';
++
++export default function AutomationConfigurationsPage() {
++  return (
++    <>
++      <PageHeader
++        title="Configurações"
++        description="Cadastre filiais e defina como cada ambiente deve gerar as etapas das automações."
++      />
++      <AutomationConfigurationsView />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/automation-configurations/queries.ts b/apps/web/src/features/automation-configurations/queries.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/automation-configurations/queries.ts
+@@ -0,0 +1,30 @@
++import { queryOptions } from '@tanstack/react-query';
++
++import { apiClient } from '@/lib/api/client';
++
++export const automationConfigurationKeys = {
++  all: ['automation-configurations'] as const,
++  branches: (winthorInstanceId: string) =>
++    ['automation-configurations', 'branches', winthorInstanceId] as const,
++  routine507: (winthorInstanceId: string) =>
++    ['automation-configurations', '507', winthorInstanceId] as const,
++};
++
++export function branchesQueryOptions(winthorInstanceId: string) {
++  return queryOptions({
++    queryKey: automationConfigurationKeys.branches(winthorInstanceId),
++    queryFn: () => apiClient.getWinThorBranches(winthorInstanceId),
++    enabled: Boolean(winthorInstanceId),
++  });
++}
++
++export function routine507ConfigurationQueryOptions(
++  winthorInstanceId: string,
++) {
++  return queryOptions({
++    queryKey: automationConfigurationKeys.routine507(winthorInstanceId),
++    queryFn: () =>
++      apiClient.getRoutine507Configuration(winthorInstanceId),
++    enabled: Boolean(winthorInstanceId),
++  });
++}
+diff --git a/apps/web/src/features/automation-configurations/branch-dialog.tsx b/apps/web/src/features/automation-configurations/branch-dialog.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/automation-configurations/branch-dialog.tsx
+@@ -0,0 +1,130 @@
++'use client';
++
++import type {
++  CreateWinThorBranchInput,
++  WinThorBranchItem,
++} from '@winaut/contracts';
++import type { FormEvent } from 'react';
++import { useEffect, useState } from 'react';
++
++interface BranchDialogProps {
++  open: boolean;
++  winthorInstanceId: string;
++  branch?: WinThorBranchItem | null;
++  pending: boolean;
++  error?: string;
++  onClose: () => void;
++  onSubmit: (input: CreateWinThorBranchInput) => void;
++}
++
++export function BranchDialog({
++  open,
++  winthorInstanceId,
++  branch,
++  pending,
++  error,
++  onClose,
++  onSubmit,
++}: BranchDialogProps) {
++  const [code, setCode] = useState('');
++  const [name, setName] = useState('');
++
++  useEffect(() => {
++    if (!open) {
++      return;
++    }
++
++    setCode(branch?.code ?? '');
++    setName(branch?.name ?? '');
++  }, [branch, open]);
++
++  if (!open) {
++    return null;
++  }
++
++  function submit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++
++    if (!code.trim() || !name.trim()) {
++      return;
++    }
++
++    onSubmit({
++      winthorInstanceId,
++      code: code.trim(),
++      name: name.trim(),
++      active: branch?.active ?? true,
++    });
++  }
++
++  return (
++    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
++      <form
++        onSubmit={submit}
++        role="dialog"
++        aria-modal="true"
++        className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-white p-6 shadow-xl"
++      >
++        <div>
++          <p className="text-xs font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
++            Ambiente WinThor
++          </p>
++          <h2 className="mt-1 text-lg font-semibold">
++            {branch ? 'Editar filial' : 'Nova filial'}
++          </h2>
++        </div>
++
++        <label className="mt-6 block text-sm font-medium">
++          Código
++          <input
++            value={code}
++            onChange={(event) => setCode(event.target.value)}
++            maxLength={30}
++            required
++            placeholder="3"
++            className="mt-2 block w-full rounded-lg border border-[var(--border)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
++          />
++          <span className="mt-1 block text-xs font-normal text-[var(--muted)]">
++            Use o mesmo código de filial utilizado no WinThor.
++          </span>
++        </label>
++
++        <label className="mt-5 block text-sm font-medium">
++          Nome
++          <input
++            value={name}
++            onChange={(event) => setName(event.target.value)}
++            maxLength={150}
++            required
++            placeholder="Loja Norte"
++            className="mt-2 block w-full rounded-lg border border-[var(--border)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
++          />
++        </label>
++
++        {error ? (
++          <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
++            {error}
++          </div>
++        ) : null}
++
++        <div className="mt-6 flex justify-end gap-2">
++          <button
++            type="button"
++            onClick={onClose}
++            disabled={pending}
++            className="rounded-lg border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++          >
++            Cancelar
++          </button>
++          <button
++            type="submit"
++            disabled={pending}
++            className="rounded-lg bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
++          >
++            {pending ? 'Salvando...' : 'Salvar filial'}
++          </button>
++        </div>
++      </form>
++    </div>
++  );
++}
+diff --git a/apps/web/src/features/automation-configurations/branches-panel.tsx b/apps/web/src/features/automation-configurations/branches-panel.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/automation-configurations/branches-panel.tsx
+@@ -0,0 +1,178 @@
++'use client';
++
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import type {
++  CreateWinThorBranchInput,
++  WinThorBranchItem,
++} from '@winaut/contracts';
++import { useState } from 'react';
++
++import { apiClient } from '@/lib/api/client';
++
++import { BranchDialog } from './branch-dialog';
++import {
++  automationConfigurationKeys,
++  branchesQueryOptions,
++} from './queries';
++
++interface BranchesPanelProps {
++  winthorInstanceId: string;
++}
++
++export function BranchesPanel({
++  winthorInstanceId,
++}: BranchesPanelProps) {
++  const queryClient = useQueryClient();
++  const branchesQuery = useQuery(branchesQueryOptions(winthorInstanceId));
++  const [dialogOpen, setDialogOpen] = useState(false);
++  const [editing, setEditing] = useState<WinThorBranchItem | null>(null);
++
++  async function refresh() {
++    await Promise.all([
++      queryClient.invalidateQueries({
++        queryKey:
++          automationConfigurationKeys.branches(winthorInstanceId),
++      }),
++      queryClient.invalidateQueries({
++        queryKey:
++          automationConfigurationKeys.routine507(winthorInstanceId),
++      }),
++    ]);
++  }
++
++  const saveMutation = useMutation({
++    mutationFn: (input: CreateWinThorBranchInput) =>
++      editing
++        ? apiClient.updateWinThorBranch(editing.id, {
++            code: input.code,
++            name: input.name,
++          })
++        : apiClient.createWinThorBranch(input),
++    onSuccess: async () => {
++      setDialogOpen(false);
++      setEditing(null);
++      await refresh();
++    },
++  });
++
++  const toggleMutation = useMutation({
++    mutationFn: (branch: WinThorBranchItem) =>
++      apiClient.updateWinThorBranch(branch.id, {
++        active: !branch.active,
++      }),
++    onSuccess: refresh,
++  });
++
++  const branches = branchesQuery.data ?? [];
++
++  return (
++    <section className="rounded-xl border border-[var(--border)] bg-white">
++      <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
++        <div>
++          <h2 className="font-semibold">Filiais</h2>
++          <p className="mt-1 text-sm text-[var(--muted)]">
++            Códigos usados para expandir as etapas da rotina 507.
++          </p>
++        </div>
++        <button
++          type="button"
++          onClick={() => {
++            setEditing(null);
++            saveMutation.reset();
++            setDialogOpen(true);
++          }}
++          className="shrink-0 rounded-lg bg-[var(--foreground)] px-3 py-2 text-xs font-medium text-white hover:opacity-90"
++        >
++          Nova filial
++        </button>
++      </div>
++
++      {branchesQuery.isPending ? (
++        <div className="p-5 text-sm text-[var(--muted)]">
++          Carregando filiais...
++        </div>
++      ) : branchesQuery.isError ? (
++        <div className="p-5 text-sm text-red-700">
++          {branchesQuery.error.message}
++        </div>
++      ) : branches.length === 0 ? (
++        <div className="p-5">
++          <p className="text-sm font-medium">Nenhuma filial cadastrada</p>
++          <p className="mt-1 text-sm text-[var(--muted)]">
++            Cadastre pelo menos uma filial antes de executar a rotina 507.
++          </p>
++        </div>
++      ) : (
++        <div className="divide-y divide-[var(--border)]">
++          {branches.map((branch) => (
++            <div
++              key={branch.id}
++              className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
++            >
++              <div className="min-w-0">
++                <div className="flex items-center gap-2">
++                  <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 font-mono text-xs font-semibold">
++                    {branch.code}
++                  </span>
++                  <p className="truncate text-sm font-medium">
++                    {branch.name}
++                  </p>
++                </div>
++                <p className="mt-2 text-xs text-[var(--muted)]">
++                  {branch.active
++                    ? 'Ativa e disponível para automações'
++                    : 'Desativada'}
++                </p>
++              </div>
++
++              <div className="flex items-center gap-2">
++                <button
++                  type="button"
++                  onClick={() => {
++                    setEditing(branch);
++                    saveMutation.reset();
++                    setDialogOpen(true);
++                  }}
++                  className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium hover:bg-[var(--surface-muted)]"
++                >
++                  Editar
++                </button>
++                <button
++                  type="button"
++                  disabled={toggleMutation.isPending}
++                  onClick={() => toggleMutation.mutate(branch)}
++                  className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++                >
++                  {branch.active ? 'Desativar' : 'Ativar'}
++                </button>
++              </div>
++            </div>
++          ))}
++        </div>
++      )}
++
++      {toggleMutation.isError ? (
++        <div className="border-t border-[var(--border)] bg-red-50 px-5 py-3 text-sm text-red-700">
++          {toggleMutation.error.message}
++        </div>
++      ) : null}
++
++      <BranchDialog
++        open={dialogOpen}
++        winthorInstanceId={winthorInstanceId}
++        branch={editing}
++        pending={saveMutation.isPending}
++        error={
++          saveMutation.isError ? saveMutation.error.message : undefined
++        }
++        onClose={() => {
++          if (!saveMutation.isPending) {
++            setDialogOpen(false);
++            setEditing(null);
++          }
++        }}
++        onSubmit={(input) => saveMutation.mutate(input)}
++      />
++    </section>
++  );
++}
+diff --git a/apps/web/src/features/automation-configurations/routine-507-panel.tsx b/apps/web/src/features/automation-configurations/routine-507-panel.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/automation-configurations/routine-507-panel.tsx
+@@ -0,0 +1,397 @@
++'use client';
++
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import {
++  Routine507BranchMode,
++  type Routine507Configuration,
++} from '@winaut/contracts';
++import { useEffect, useMemo, useState } from 'react';
++
++import { apiClient } from '@/lib/api/client';
++
++import {
++  automationConfigurationKeys,
++  routine507ConfigurationQueryOptions,
++} from './queries';
++
++interface Routine507PanelProps {
++  winthorInstanceId: string;
++}
++
++const monthOptions = Array.from({ length: 12 }, (_, index) => index);
++
++function cloneConfiguration(
++  configuration: Routine507Configuration,
++): Routine507Configuration {
++  return {
++    ...configuration,
++    branchIds: [...configuration.branchIds],
++    turnoverMonths: [...configuration.turnoverMonths],
++  };
++}
++
++export function Routine507Panel({
++  winthorInstanceId,
++}: Routine507PanelProps) {
++  const queryClient = useQueryClient();
++  const configurationQuery = useQuery(
++    routine507ConfigurationQueryOptions(winthorInstanceId),
++  );
++  const [draft, setDraft] = useState<Routine507Configuration | null>(
++    null,
++  );
++
++  useEffect(() => {
++    if (configurationQuery.data) {
++      setDraft(
++        cloneConfiguration(configurationQuery.data.configuration),
++      );
++    }
++  }, [configurationQuery.data]);
++
++  const saveMutation = useMutation({
++    mutationFn: (configuration: Routine507Configuration) =>
++      apiClient.saveRoutine507Configuration(
++        winthorInstanceId,
++        configuration,
++      ),
++    onSuccess: async (result) => {
++      setDraft(cloneConfiguration(result.configuration));
++      await queryClient.invalidateQueries({
++        queryKey:
++          automationConfigurationKeys.routine507(winthorInstanceId),
++      });
++    },
++  });
++
++  const previewMutation = useMutation({
++    mutationFn: (configuration: Routine507Configuration) =>
++      apiClient.previewRoutine507Configuration(
++        winthorInstanceId,
++        configuration,
++      ),
++  });
++
++  const resetMutation = useMutation({
++    mutationFn: () =>
++      apiClient.resetRoutine507Configuration(winthorInstanceId),
++    onSuccess: async (result) => {
++      setDraft(cloneConfiguration(result.configuration));
++      previewMutation.reset();
++      await queryClient.invalidateQueries({
++        queryKey:
++          automationConfigurationKeys.routine507(winthorInstanceId),
++      });
++    },
++  });
++
++  const sourceConfiguration = configurationQuery.data?.configuration;
++  const changed = useMemo(() => {
++    if (!draft || !sourceConfiguration) {
++      return false;
++    }
++
++    return JSON.stringify(draft) !== JSON.stringify(sourceConfiguration);
++  }, [draft, sourceConfiguration]);
++
++  if (configurationQuery.isPending || !draft) {
++    return (
++      <section className="rounded-xl border border-[var(--border)] bg-white p-5 text-sm text-[var(--muted)]">
++        Carregando configuração da rotina 507...
++      </section>
++    );
++  }
++
++  if (configurationQuery.isError) {
++    return (
++      <section className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
++        {configurationQuery.error.message}
++      </section>
++    );
++  }
++
++  const data = configurationQuery.data;
++  const activeBranches = data.branches.filter((branch) => branch.active);
++  const preview =
++    previewMutation.data?.preview ??
++    saveMutation.data?.preview ??
++    data.preview;
++
++  function toggleBranch(branchId: string) {
++    setDraft((current) => {
++      if (!current) {
++        return current;
++      }
++
++      const selected = new Set(current.branchIds);
++      if (selected.has(branchId)) {
++        selected.delete(branchId);
++      } else {
++        selected.add(branchId);
++      }
++
++      return { ...current, branchIds: Array.from(selected) };
++    });
++    previewMutation.reset();
++  }
++
++  function toggleMonth(month: number) {
++    setDraft((current) => {
++      if (!current) {
++        return current;
++      }
++
++      const selected = new Set(current.turnoverMonths);
++      if (selected.has(month)) {
++        selected.delete(month);
++      } else {
++        selected.add(month);
++      }
++
++      return {
++        ...current,
++        turnoverMonths: Array.from(selected).sort(
++          (left, right) => left - right,
++        ),
++      };
++    });
++    previewMutation.reset();
++  }
++
++  const mutationError =
++    saveMutation.error ?? previewMutation.error ?? resetMutation.error;
++
++  return (
++    <section className="rounded-xl border border-[var(--border)] bg-white">
++      <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
++        <div>
++          <div className="flex items-center gap-2">
++            <h2 className="font-semibold">Rotina 507</h2>
++            <span className="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
++              {data.source === 'SAVED' ? 'Personalizada' : 'Padrão'}
++            </span>
++          </div>
++          <p className="mt-1 text-sm text-[var(--muted)]">
++            O backend gera os steps a partir destas opções. O painel nunca
++            envia payload de execução arbitrário.
++          </p>
++        </div>
++
++        {data.source === 'SAVED' ? (
++          <button
++            type="button"
++            disabled={resetMutation.isPending}
++            onClick={() => resetMutation.mutate()}
++            className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++          >
++            {resetMutation.isPending ? 'Restaurando...' : 'Restaurar padrão'}
++          </button>
++        ) : null}
++      </div>
++
++      <div className="space-y-7 p-5">
++        <div>
++          <label className="text-sm font-medium" htmlFor="branch-mode">
++            Filiais
++          </label>
++          <select
++            id="branch-mode"
++            value={draft.branchMode}
++            onChange={(event) => {
++              const branchMode = event.target
++                .value as Routine507Configuration['branchMode'];
++              setDraft((current) =>
++                current
++                  ? {
++                      ...current,
++                      branchMode,
++                      branchIds:
++                        branchMode === Routine507BranchMode.ALL_ACTIVE
++                          ? []
++                          : current.branchIds,
++                    }
++                  : current,
++              );
++              previewMutation.reset();
++            }}
++            className="mt-2 block w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
++          >
++            <option value={Routine507BranchMode.ALL_ACTIVE}>
++              Todas as filiais ativas — inclui novas filiais automaticamente
++            </option>
++            <option value={Routine507BranchMode.SELECTED}>
++              Selecionar filiais específicas
++            </option>
++          </select>
++
++          {draft.branchMode === Routine507BranchMode.SELECTED ? (
++            <div className="mt-3 grid gap-2 sm:grid-cols-2">
++              {activeBranches.map((branch) => (
++                <label
++                  key={branch.id}
++                  className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-3 py-2.5 text-sm"
++                >
++                  <input
++                    type="checkbox"
++                    checked={draft.branchIds.includes(branch.id)}
++                    onChange={() => toggleBranch(branch.id)}
++                  />
++                  <span>
++                    <span className="font-mono text-xs">{branch.code}</span>
++                    {' · '}
++                    {branch.name}
++                  </span>
++                </label>
++              ))}
++            </div>
++          ) : (
++            <p className="mt-2 text-xs text-[var(--muted)]">
++              {activeBranches.length} filial(is) ativa(s). Ao cadastrar uma
++              nova filial ativa, os próximos Runs da 507 já incluirão suas
++              etapas.
++            </p>
++          )}
++        </div>
++
++        <div>
++          <p className="text-sm font-medium">Giro Mercadorias</p>
++          <p className="mt-1 text-xs text-[var(--muted)]">
++            Escolha os meses/offsets que devem ser recalculados para cada
++            filial.
++          </p>
++          <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
++            {monthOptions.map((month) => (
++              <label
++                key={month}
++                className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
++              >
++                <input
++                  type="checkbox"
++                  checked={draft.turnoverMonths.includes(month)}
++                  onChange={() => toggleMonth(month)}
++                />
++                Mês {month}
++              </label>
++            ))}
++          </div>
++        </div>
++
++        <div>
++          <p className="text-sm font-medium">Outros recálculos</p>
++          <div className="mt-3 grid gap-2 sm:grid-cols-2">
++            <label className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-3 py-3 text-sm">
++              <input
++                type="checkbox"
++                checked={draft.dailyTurnover}
++                onChange={(event) => {
++                  setDraft({
++                    ...draft,
++                    dailyTurnover: event.target.checked,
++                  });
++                  previewMutation.reset();
++                }}
++              />
++              <span>
++                <span className="block font-medium">Opção 4 · Giro Dia</span>
++                <span className="mt-0.5 block text-xs text-[var(--muted)]">
++                  Uma etapa para cada filial selecionada.
++                </span>
++              </span>
++            </label>
++
++            <label className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-3 py-3 text-sm">
++              <input
++                type="checkbox"
++                checked={draft.salePrice}
++                onChange={(event) => {
++                  setDraft({
++                    ...draft,
++                    salePrice: event.target.checked,
++                  });
++                  previewMutation.reset();
++                }}
++              />
++              <span>
++                <span className="block font-medium">
++                  Opção 14 · Preço de Venda
++                </span>
++                <span className="mt-0.5 block text-xs text-[var(--muted)]">
++                  Compras/Vendas para cada filial selecionada.
++                </span>
++              </span>
++            </label>
++          </div>
++        </div>
++
++        {mutationError ? (
++          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
++            {mutationError.message}
++          </div>
++        ) : null}
++
++        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
++          <button
++            type="button"
++            disabled={previewMutation.isPending}
++            onClick={() => previewMutation.mutate(draft)}
++            className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-50"
++          >
++            {previewMutation.isPending ? 'Gerando...' : 'Gerar preview'}
++          </button>
++          <button
++            type="button"
++            disabled={saveMutation.isPending || !changed}
++            onClick={() => saveMutation.mutate(draft)}
++            className="rounded-lg bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
++          >
++            {saveMutation.isPending
++              ? 'Salvando...'
++              : changed
++                ? 'Salvar configuração'
++                : 'Configuração salva'}
++          </button>
++        </div>
++
++        <div className="overflow-hidden rounded-xl border border-[var(--border)]">
++          <div className="flex items-center justify-between gap-4 bg-[var(--surface-muted)] px-4 py-3">
++            <div>
++              <p className="text-sm font-semibold">Preview das etapas</p>
++              <p className="mt-0.5 text-xs text-[var(--muted)]">
++                {previewMutation.data
++                  ? 'Preview calculado para as alterações atuais.'
++                  : changed
++                    ? 'Há alterações não refletidas abaixo. Clique em Gerar preview.'
++                    : 'Esta é a sequência atualmente efetiva.'}
++              </p>
++            </div>
++            <span className="text-sm font-semibold tabular-nums">
++              {preview.length} etapa(s)
++            </span>
++          </div>
++
++          <div className="max-h-[520px] divide-y divide-[var(--border)] overflow-y-auto">
++            {preview.length === 0 ? (
++              <div className="p-4 text-sm text-[var(--muted)]">
++                Nenhuma etapa gerada.
++              </div>
++            ) : (
++              preview.map((step) => (
++                <div key={step.code} className="flex gap-3 px-4 py-3">
++                  <span className="mt-0.5 w-7 shrink-0 font-mono text-xs font-semibold text-[var(--muted)]">
++                    {String(step.sequenceNumber).padStart(2, '0')}
++                  </span>
++                  <div className="min-w-0">
++                    <p className="text-sm font-medium">{step.name}</p>
++                    <p className="mt-1 truncate font-mono text-[11px] text-[var(--muted)]">
++                      {step.code}
++                    </p>
++                  </div>
++                </div>
++              ))
++            )}
++          </div>
++        </div>
++      </div>
++    </section>
++  );
++}
+diff --git a/apps/web/src/features/automation-configurations/automation-configurations-view.tsx b/apps/web/src/features/automation-configurations/automation-configurations-view.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/features/automation-configurations/automation-configurations-view.tsx
+@@ -0,0 +1,106 @@
++'use client';
++
++import { useQuery } from '@tanstack/react-query';
++import { useEffect, useMemo, useState } from 'react';
++
++import { ErrorState } from '@/components/ui/error-state';
++import { winThorInstancesQueryOptions } from '@/features/winthor-instances/queries';
++
++import { BranchesPanel } from './branches-panel';
++import { Routine507Panel } from './routine-507-panel';
++
++export function AutomationConfigurationsView() {
++  const instancesQuery = useQuery(winThorInstancesQueryOptions);
++  const [selectedId, setSelectedId] = useState('');
++
++  const instances = useMemo(
++    () =>
++      [...(instancesQuery.data ?? [])].sort((left, right) => {
++        const company = left.company.name.localeCompare(
++          right.company.name,
++          'pt-BR',
++        );
++        return company !== 0
++          ? company
++          : left.name.localeCompare(right.name, 'pt-BR');
++      }),
++    [instancesQuery.data],
++  );
++
++  useEffect(() => {
++    if (!selectedId && instances.length > 0) {
++      setSelectedId(instances[0].id);
++    }
++  }, [instances, selectedId]);
++
++  if (instancesQuery.isPending) {
++    return (
++      <div className="rounded-xl border border-[var(--border)] bg-white p-6 text-sm text-[var(--muted)]">
++        Carregando ambientes WinThor...
++      </div>
++    );
++  }
++
++  if (instancesQuery.isError) {
++    return (
++      <ErrorState
++        message={instancesQuery.error.message}
++        onRetry={() => void instancesQuery.refetch()}
++      />
++    );
++  }
++
++  if (instances.length === 0) {
++    return (
++      <div className="rounded-xl border border-[var(--border)] bg-white p-6">
++        <p className="font-medium">Nenhum ambiente WinThor cadastrado</p>
++        <p className="mt-1 text-sm text-[var(--muted)]">
++          Cadastre um ambiente antes de configurar filiais e automações.
++        </p>
++      </div>
++    );
++  }
++
++  const selected = instances.find((instance) => instance.id === selectedId);
++
++  return (
++    <div className="space-y-5">
++      <section className="rounded-xl border border-[var(--border)] bg-white p-4">
++        <label
++          htmlFor="configuration-environment"
++          className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]"
++        >
++          Ambiente
++        </label>
++        <select
++          id="configuration-environment"
++          value={selectedId}
++          onChange={(event) => setSelectedId(event.target.value)}
++          className="mt-2 block w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
++        >
++          {instances.map((instance) => (
++            <option key={instance.id} value={instance.id}>
++              {instance.company.name} · {instance.name}
++            </option>
++          ))}
++        </select>
++
++        {selected ? (
++          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--muted)]">
++            <span>Timezone: {selected.timeZone}</span>
++            <span>
++              Status: {selected.active ? 'Ambiente ativo' : 'Ambiente inativo'}
++            </span>
++          </div>
++        ) : null}
++      </section>
++
++      {selectedId ? (
++        <div className="grid gap-5 xl:grid-cols-[minmax(300px,0.75fr)_minmax(0,1.6fr)]">
++          <BranchesPanel winthorInstanceId={selectedId} />
++          <Routine507Panel winthorInstanceId={selectedId} />
++        </div>
++      ) : null}
++    </div>
++  );
++}

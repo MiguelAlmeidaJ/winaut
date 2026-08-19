@@ -12,11 +12,13 @@ import {
 import type { AuthenticatedAgent } from '../agents/agent-auth.types';
 import { AgentAuthGuard } from '../agents/agent-auth.guard';
 import { CurrentAgent } from '../agents/current-agent.decorator';
+import { PublicAdmin } from '../auth/public-admin.decorator';
 import { AgentJobsService } from './agent-jobs.service';
 import { CompleteAgentJobDto } from './dto/complete-agent-job.dto';
 import { FailAgentJobDto } from './dto/fail-agent-job.dto';
 import { HeartbeatAgentJobDto } from './dto/heartbeat-agent-job.dto';
 
+@PublicAdmin()
 @Controller('agent-jobs')
 @UseGuards(AgentAuthGuard)
 export class AgentJobsController {

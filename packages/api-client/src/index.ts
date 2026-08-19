@@ -1,6 +1,10 @@
 import type {
+  AdminSessionResponse,
+  AdminUser,
   AgentCredentialListItem,
   AgentListItem,
+  LoginInput,
+  LogoutResponse,
   CompanyDetail,
   CompanyReference,
   CreateCompanyInput,
@@ -48,6 +52,9 @@ export class WinAutApiError extends Error {
 }
 
 export interface WinAutApiClient {
+  login(input: LoginInput): Promise<AdminSessionResponse>;
+  logout(): Promise<LogoutResponse>;
+  getCurrentAdmin(): Promise<AdminUser>;
   getHealth(): Promise<HealthResponse>;
   getCompanies(): Promise<CompanyListItem[]>;
   createCompany(input: CreateCompanyInput): Promise<CompanyReference>;
@@ -156,6 +163,7 @@ export function createWinAutApiClient(
     try {
       response = await fetch(`${baseUrl}${path}`, {
         method: options.method ?? 'GET',
+        credentials: 'include',
         headers: {
           Accept: 'application/json',
           ...(options.body === undefined
@@ -189,6 +197,16 @@ export function createWinAutApiClient(
   }
 
   return {
+    login: (input) =>
+      request<AdminSessionResponse>('/api/auth/login', {
+        method: 'POST',
+        body: input,
+      }),
+    logout: () =>
+      request<LogoutResponse>('/api/auth/logout', {
+        method: 'POST',
+      }),
+    getCurrentAdmin: () => request<AdminUser>('/api/auth/me'),
     getHealth: () => request<HealthResponse>('/api/health'),
     getCompanies: () => request<CompanyListItem[]>('/api/companies'),
     createCompany: (input) =>

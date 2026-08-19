@@ -16,6 +16,7 @@ import { CurrentAgent } from './current-agent.decorator';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
+import { PublicAdmin } from '../auth/public-admin.decorator';
 
 @Controller('agents')
 export class AgentsController {
@@ -27,6 +28,7 @@ export class AgentsController {
   }
 
   @Post('me/heartbeat')
+  @PublicAdmin()
   @UseGuards(AgentAuthGuard)
   heartbeat(
     @CurrentAgent() agent: AuthenticatedAgent,
@@ -36,6 +38,7 @@ export class AgentsController {
   }
 
   @Get('me/config')
+  @PublicAdmin()
   @UseGuards(AgentAuthGuard)
   getConfig(@CurrentAgent() agent: AuthenticatedAgent) {
     return this.agentsService.getConfig(agent);

@@ -2,6 +2,34 @@ import type { WinThorExecutionMode, WinThorHostingType } from './winthor.js';
 
 export type DateTimeString = string;
 
+export const AdminRole = {
+  ADMIN: 'ADMIN',
+} as const;
+
+export type AdminRole = (typeof AdminRole)[keyof typeof AdminRole];
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  role: AdminRole;
+  lastLoginAt: DateTimeString | null;
+  createdAt: DateTimeString;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface AdminSessionResponse {
+  user: AdminUser;
+}
+
+export interface LogoutResponse {
+  status: 'ok';
+}
+
 export const AgentStatus = {
   ONLINE: 'ONLINE',
   OFFLINE: 'OFFLINE',
