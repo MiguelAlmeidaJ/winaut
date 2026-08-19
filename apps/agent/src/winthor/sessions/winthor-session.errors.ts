@@ -22,3 +22,61 @@ export class UnsupportedWinThorExecutionModeError extends Error {
     this.name = UnsupportedWinThorExecutionModeError.name;
   }
 }
+
+export class WinThorLocalSessionStateError extends Error {
+  readonly code = 'WINTHOR_LOCAL_SESSION_STATE_INVALID';
+
+  constructor(operation: string) {
+    super(
+      `LOCAL_WINDOWS session must be connected before ${operation}.`,
+    );
+    this.name = WinThorLocalSessionStateError.name;
+  }
+}
+
+export class WinThorLocalEndpointNotConfiguredError extends Error {
+  readonly code = 'WINTHOR_LOCAL_ENDPOINT_NOT_CONFIGURED';
+
+  constructor(readonly windowTitle: string) {
+    super(
+      `No WinThor window matching "${windowTitle}" was found and the LOCAL_WINDOWS access profile has no launch target in endpoint.`,
+    );
+    this.name = WinThorLocalEndpointNotConfiguredError.name;
+  }
+}
+
+export class WinThorLocalWindowNotFoundError extends Error {
+  readonly code = 'WINTHOR_LOCAL_WINDOW_NOT_FOUND';
+
+  constructor(
+    readonly windowTitle: string,
+    readonly timeoutMs?: number,
+  ) {
+    super(
+      timeoutMs === undefined
+        ? `WinThor window matching "${windowTitle}" is no longer available.`
+        : `WinThor window matching "${windowTitle}" was not found within ${timeoutMs}ms.`,
+    );
+    this.name = WinThorLocalWindowNotFoundError.name;
+  }
+}
+
+export class WinThorAuthenticationRequiredError extends Error {
+  readonly code = 'WINTHOR_AUTHENTICATION_REQUIRED';
+
+  constructor(readonly windowTitle: string) {
+    super(
+      `WinThor appears to require authentication before automation can continue (window: "${windowTitle}").`,
+    );
+    this.name = WinThorAuthenticationRequiredError.name;
+  }
+}
+
+export class WinThorInvalidRoutineCodeError extends Error {
+  readonly code = 'WINTHOR_ROUTINE_CODE_INVALID';
+
+  constructor(readonly routineCode: number) {
+    super(`Invalid WinThor routine code: ${routineCode}.`);
+    this.name = WinThorInvalidRoutineCodeError.name;
+  }
+}

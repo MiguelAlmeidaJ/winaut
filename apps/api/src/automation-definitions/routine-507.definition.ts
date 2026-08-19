@@ -56,7 +56,7 @@ export const ROUTINE_507_DEFINITION: AutomationDefinition = {
     const steps: AutomationStepDefinition[] = [];
 
     for (const month of [...configuration.turnoverMonths].sort(
-      (left, right) => left - right,
+      (left, right) => right - left,
     )) {
       for (const branch of branches) {
         steps.push({

@@ -6,7 +6,9 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "pnpm build && node --test dist/winthor/sessions/winthor-session.factory.test.js"
+    "diagnose:507": "pnpm build && node dist/diagnostics/routine-507-open.diagnostic.js",
+    "start": "node dist/cli.js",
+    "test": "pnpm build && node --test dist/winthor/sessions/winthor-session.factory.test.js dist/runtime/agent-runtime.test.js dist/jobs/winthor-agent-job-handler.test.js dist/winthor/sessions/local-winthor.session.test.js"
   },
   "dependencies": {
     "@winaut/contracts": "workspace:*",

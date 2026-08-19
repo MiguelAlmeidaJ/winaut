@@ -1,5 +1,8 @@
 import type { AgentJob } from '@winaut/contracts';
 
 export interface AgentJobHandler {
-  execute(job: AgentJob): Promise<Record<string, unknown> | undefined>;
+  execute(
+    job: AgentJob,
+    signal: AbortSignal,
+  ): Promise<Record<string, unknown> | undefined>;
 }

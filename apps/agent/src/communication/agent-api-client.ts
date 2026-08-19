@@ -1,5 +1,6 @@
 import type {
   AgentConfig,
+  AgentJobClaimResponse,
 } from '@winaut/contracts';
 
 import { AgentApiError } from './agent-api.errors';
@@ -51,6 +52,64 @@ export class AgentApiClient {
         method: 'POST',
 
         body: JSON.stringify(input),
+      },
+    );
+  }
+
+  claimJob(): Promise<AgentJobClaimResponse> {
+    return this.request<AgentJobClaimResponse>(
+      '/api/agent-jobs/claim',
+      {
+        method: 'POST',
+      },
+    );
+  }
+
+  async heartbeatJob(
+    stepId: string,
+    claimToken: string,
+  ): Promise<void> {
+    await this.request<unknown>(
+      `/api/agent-jobs/${encodeURIComponent(stepId)}/heartbeat`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ claimToken }),
+      },
+    );
+  }
+
+  async succeedJob(
+    stepId: string,
+    claimToken: string,
+    result?: Record<string, unknown>,
+  ): Promise<void> {
+    await this.request<unknown>(
+      `/api/agent-jobs/${encodeURIComponent(stepId)}/succeed`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          claimToken,
+          ...(result === undefined ? {} : { result }),
+        }),
+      },
+    );
+  }
+
+  async failJob(
+    stepId: string,
+    claimToken: string,
+    errorCode: string,
+    errorMessage: string,
+  ): Promise<void> {
+    await this.request<unknown>(
+      `/api/agent-jobs/${encodeURIComponent(stepId)}/fail`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          claimToken,
+          errorCode,
+          errorMessage,
+        }),
       },
     );
   }
