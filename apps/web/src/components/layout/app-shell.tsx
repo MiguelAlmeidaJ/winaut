@@ -28,7 +28,7 @@ function routeLabel(pathname: string): string {
 
   return (
     routeNames.find((item) => pathname.startsWith(item.prefix))?.label ??
-    'WinAut'
+    'Orquestra'
   );
 }
 
@@ -166,7 +166,7 @@ function UserMenu({ user }: { user: AdminUser }) {
 function SessionSkeleton() {
   return (
     <div className="min-h-screen bg-[var(--background)] lg:flex">
-      <div className="hidden w-[272px] bg-[var(--sidebar)] lg:block" />
+      <div className="hidden w-[288px] bg-[var(--sidebar)] lg:block" />
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="flex items-center gap-3 text-sm text-[var(--muted)]">
           <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--accent)]" />

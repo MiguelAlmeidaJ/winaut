@@ -10,10 +10,10 @@ export function PageHeader({ title, description, action }: PageHeaderProps) {
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
+        <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)]">
           {title}
         </h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+        <p className="mt-1 text-sm text-[var(--muted)] opacity-70">{description}</p>
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>

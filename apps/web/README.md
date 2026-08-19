@@ -1,6 +1,6 @@
 # @winaut/web
 
-Painel administrativo do WinAut.
+Painel administrativo do Orquestra.
 
 ## Desenvolvimento
 

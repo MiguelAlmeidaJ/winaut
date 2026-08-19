@@ -6,7 +6,7 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        description="Visão operacional dos ambientes e automações do WinAut."
+        description="Visão operacional dos ambientes e automações do Orquestra."
       />
       <DashboardOverview />
     </>

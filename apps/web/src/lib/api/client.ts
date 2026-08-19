@@ -48,7 +48,7 @@ async function companyAutomationRequest<T>(
     });
   } catch {
     throw new WinAutApiError(
-      'Não foi possível conectar à API do WinAut.',
+      'Não foi possível conectar à API do Orquestra.',
       0,
     );
   }
