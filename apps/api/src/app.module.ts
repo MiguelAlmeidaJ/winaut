@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AgentJobsModule } from './agent-jobs/agent-jobs.module';
 import { AgentsModule } from './agents/agents.module';
 import { AutomationConfigurationsModule } from './automation-configurations/automation-configurations.module';
+import { CompanyAutomationsModule } from './company-automations/company-automations.module';
 import { AutomationRunsModule } from './automation-runs/automation-runs.module';
 import { AutomationSchedulerModule } from './automation-scheduler/automation-scheduler.module';
 import { AutomationSchedulesModule } from './automation-schedules/automation-schedules.module';
@@ -31,6 +32,7 @@ import { WinThorAccessProfilesModule } from './winthor-access-profiles/winthor-a
     WinThorAccessProfilesModule,
     WinThorBranchesModule,
     AgentsModule,
+    CompanyAutomationsModule,
     AutomationConfigurationsModule,
     AutomationSchedulesModule,
     AutomationRunsModule,

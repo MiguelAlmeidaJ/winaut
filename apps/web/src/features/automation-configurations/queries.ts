@@ -1,9 +1,11 @@
 import { queryOptions } from '@tanstack/react-query';
 
-import { apiClient } from '@/lib/api/client';
+import { apiClient, companyAutomationsApi } from '@/lib/api/client';
 
 export const automationConfigurationKeys = {
   all: ['automation-configurations'] as const,
+  company: (companyId: string) =>
+    ['automation-configurations', 'company', companyId] as const,
   branches: (winthorInstanceId: string) =>
     ['automation-configurations', 'branches', winthorInstanceId] as const,
   routine507: (winthorInstanceId: string) =>
@@ -26,5 +28,13 @@ export function routine507ConfigurationQueryOptions(
     queryFn: () =>
       apiClient.getRoutine507Configuration(winthorInstanceId),
     enabled: Boolean(winthorInstanceId),
+  });
+}
+
+export function companyAutomationsQueryOptions(companyId: string) {
+  return queryOptions({
+    queryKey: automationConfigurationKeys.company(companyId),
+    queryFn: () => companyAutomationsApi.get(companyId),
+    enabled: Boolean(companyId),
   });
 }

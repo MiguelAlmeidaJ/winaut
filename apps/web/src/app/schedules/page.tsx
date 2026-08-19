@@ -1,5 +1,5 @@
 import { PageHeader } from '@/components/ui/page-header';
-import { CreateScheduleDialog } from '@/features/schedules/create-schedule-dialog';
+import { CreateCompanyScheduleDialog } from '@/features/schedules/create-company-schedule-dialog';
 import { SchedulesTable } from '@/features/schedules/schedules-table';
 
 export default function SchedulesPage() {
@@ -8,7 +8,7 @@ export default function SchedulesPage() {
       <PageHeader
         title="Agendamentos"
         description="Configure quando cada rotina WinThor deve ser executada e acompanhe os próximos horários."
-        action={<CreateScheduleDialog />}
+        action={<CreateCompanyScheduleDialog />}
       />
       <SchedulesTable />
     </>

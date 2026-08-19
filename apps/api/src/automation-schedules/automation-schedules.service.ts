@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { AutomationDefinitionRegistry } from '../automation-definitions/automation-definition.registry';
 import { AutomationRunsService } from '../automation-runs/automation-runs.service';
+import { CompanyAutomationsService } from '../company-automations/company-automations.service';
 import { PrismaService } from '../database/prisma.service';
 import { CronScheduleService } from './cron-schedule.service';
 import { CreateAutomationScheduleDto } from './dto/create-automation-schedule.dto';
@@ -12,6 +13,7 @@ export class AutomationSchedulesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly definitions: AutomationDefinitionRegistry,
+    private readonly companyAutomations: CompanyAutomationsService,
     private readonly cron: CronScheduleService,
     private readonly runs: AutomationRunsService,
   ) {}
@@ -19,6 +21,11 @@ export class AutomationSchedulesService {
   async create(dto: CreateAutomationScheduleDto) {
     this.definitions.get(dto.automationCode);
     await this.ensureInstanceExists(dto.winthorInstanceId);
+    await this.companyAutomations.assertEnabledForInstance(
+      this.prisma.db,
+      dto.winthorInstanceId,
+      dto.automationCode,
+    );
     const nextRunAt = this.cron.next(dto.cronExpression, dto.timeZone);
 
     return this.prisma.db.automationSchedule.create({
@@ -61,6 +68,13 @@ export class AutomationSchedulesService {
 
   async update(id: string, dto: UpdateAutomationScheduleDto) {
     const current = await this.findOne(id);
+    if (dto.enabled === true) {
+      await this.companyAutomations.assertEnabledForInstance(
+        this.prisma.db,
+        current.winthorInstanceId,
+        current.automationCode,
+      );
+    }
     const cronExpression = dto.cronExpression ?? current.cronExpression;
     const timeZone = dto.timeZone ?? current.timeZone;
     const scheduleChanged =
@@ -86,6 +100,11 @@ export class AutomationSchedulesService {
 
   async trigger(id: string) {
     const schedule = await this.findOne(id);
+    await this.companyAutomations.assertEnabledForInstance(
+      this.prisma.db,
+      schedule.winthorInstanceId,
+      schedule.automationCode,
+    );
     return this.runs.createManualRun(schedule);
   }
 

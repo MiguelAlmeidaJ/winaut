@@ -30,4 +30,8 @@ export class AutomationDefinitionRegistry {
   has(automationCode: string): boolean {
     return this.definitions.has(automationCode);
   }
+
+  list(): readonly AutomationDefinition[] {
+    return Array.from(this.definitions.values());
+  }
 }

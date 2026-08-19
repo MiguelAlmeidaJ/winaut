@@ -10,6 +10,7 @@ import type {
   AutomationStepDefinition,
   Routine507Configuration,
 } from '../automation-definitions/automation-definition.types';
+import { CompanyAutomationsService } from '../company-automations/company-automations.service';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '../generated/prisma/client';
 import { Routine507ConfigurationDto } from './dto/routine-507-configuration.dto';
@@ -37,9 +38,15 @@ export class AutomationConfigurationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly definitions: AutomationDefinitionRegistry,
+    private readonly companyAutomations: CompanyAutomationsService,
   ) {}
 
-  getRoutine507(winthorInstanceId: string) {
+  async getRoutine507(winthorInstanceId: string) {
+    await this.companyAutomations.assertEnabledForInstance(
+      this.prisma.db,
+      winthorInstanceId,
+      '507',
+    );
     return this.getRoutine507WithClient(this.prisma.db, winthorInstanceId);
   }
 
@@ -47,6 +54,11 @@ export class AutomationConfigurationsService {
     winthorInstanceId: string,
     dto: Routine507ConfigurationDto,
   ) {
+    await this.companyAutomations.assertEnabledForInstance(
+      this.prisma.db,
+      winthorInstanceId,
+      '507',
+    );
     const branches = await this.loadBranches(
       this.prisma.db,
       winthorInstanceId,
@@ -81,6 +93,11 @@ export class AutomationConfigurationsService {
     winthorInstanceId: string,
     dto: Routine507ConfigurationDto,
   ) {
+    await this.companyAutomations.assertEnabledForInstance(
+      this.prisma.db,
+      winthorInstanceId,
+      '507',
+    );
     const branches = await this.loadBranches(
       this.prisma.db,
       winthorInstanceId,
@@ -95,6 +112,11 @@ export class AutomationConfigurationsService {
   }
 
   async resetRoutine507(winthorInstanceId: string) {
+    await this.companyAutomations.assertEnabledForInstance(
+      this.prisma.db,
+      winthorInstanceId,
+      '507',
+    );
     await this.assertInstance(this.prisma.db, winthorInstanceId);
 
     await this.prisma.db.automationConfiguration.deleteMany({
@@ -115,6 +137,11 @@ export class AutomationConfigurationsService {
     winthorInstanceId: string,
     automationCode: string,
   ): Promise<readonly AutomationStepDefinition[]> {
+    await this.companyAutomations.assertEnabledForInstance(
+      client,
+      winthorInstanceId,
+      automationCode,
+    );
     const definition = this.definitions.get(automationCode);
 
     if (automationCode !== '507') {

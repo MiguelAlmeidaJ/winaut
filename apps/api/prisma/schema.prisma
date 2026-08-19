@@ -88,9 +88,25 @@ model Company {
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
   winthorInstances WinThorInstance[]
+  automations      CompanyAutomation[]
 
   @@index([active, name])
   @@map("companies")
+}
+
+model CompanyAutomation {
+  id             String   @id @default(uuid()) @db.Char(36)
+  companyId      String   @map("company_id") @db.Char(36)
+  automationCode String   @map("automation_code") @db.VarChar(50)
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, automationCode], map: "company_automations_company_code_key")
+  @@index([automationCode, enabled], map: "company_automations_code_enabled_idx")
+  @@map("company_automations")
 }
 
 model WinThorInstance {
