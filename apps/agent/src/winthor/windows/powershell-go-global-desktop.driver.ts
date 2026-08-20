@@ -47,9 +47,14 @@ export class PowerShellGoGlobalDesktopDriver
     };
   }
 
-  async launchClient(): Promise<void> {
+  async launchClient(
+    host?: string | null,
+    applicationName?: string | null,
+  ): Promise<void> {
     await this.run('launchClient', {
       executablePath: this.executablePath,
+      host: host?.trim() || null,
+      applicationName: applicationName?.trim() || null,
     });
   }
 
@@ -231,9 +236,19 @@ function Test-GoGlobalWindow($window) {
   $title = [string]$window.Current.Name
   $processName = Get-ProcessName $window.Current.ProcessId
   return (
-    $title -match '(?i)(App\s*Controller|GO-Global|GraphOn)' -or
+    $title -match '(?i)(App\s*Controller|GO-Global|GraphOn|TOTVS\s*Cloud\s*[-–—]\s*Linha\s*WinThor)' -or
     $processName -match '(?i)(AppController|gg-client|goglobal)'
   )
+}
+
+function Get-GoGlobalLoginWindow {
+  foreach ($window in (Get-TopWindows)) {
+    $title = [string]$window.Current.Name
+    if ($title -match '(?i)^\s*TOTVS\s*Cloud\s*[-–—]\s*Linha\s*WinThor(?:\s.*)?$') {
+      return $window
+    }
+  }
+  return $null
 }
 
 function Get-GoGlobalWindows {
@@ -249,6 +264,9 @@ function Get-GoGlobalWindows {
 function Get-WinThorWindow {
   foreach ($window in (Get-TopWindows)) {
     $title = [string]$window.Current.Name
+    if ($title -match '(?i)^\s*TOTVS\s*Cloud\s*[-–—]\s*Linha\s*WinThor(?:\s.*)?$') {
+      continue
+    }
     if ($title -match '(?i)WinThor') {
       return $window
     }
@@ -321,6 +339,9 @@ function Invoke-Element($element) {
 }
 
 function Get-LoginWindow {
+  $goGlobalLogin = Get-GoGlobalLoginWindow
+  if ($null -ne $goGlobalLogin) { return $goGlobalLogin }
+
   foreach ($window in (Get-GoGlobalWindows)) {
     $edits = @(Get-ElementsByType $window 'Edit')
     if ($edits.Count -lt 2) { continue }
@@ -377,14 +398,32 @@ switch ($operation) {
 
   'launchClient' {
     $configuredPath = [string]$payload.executablePath
+    $targetHost = [string]$payload.host
+    $applicationName = [string]$payload.applicationName
     $launched = $false
     $source = $null
+    $launchArguments = @()
+
+    if (-not [string]::IsNullOrWhiteSpace($targetHost)) {
+      $launchArguments += @('-h', $targetHost)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($applicationName)) {
+      $launchArguments += @('-a', $applicationName)
+    }
+
+    function Start-AppControllerProcess([string]$filePath) {
+      if ($launchArguments.Count -gt 0) {
+        Start-Process -FilePath $filePath -ArgumentList $launchArguments | Out-Null
+      } else {
+        Start-Process -FilePath $filePath | Out-Null
+      }
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($configuredPath)) {
       if (-not (Test-Path -LiteralPath $configuredPath)) {
         throw "Configured App Controller path does not exist: $configuredPath"
       }
-      Start-Process -FilePath $configuredPath | Out-Null
+      Start-AppControllerProcess $configuredPath
       $launched = $true
       $source = $configuredPath
     }
@@ -392,7 +431,7 @@ switch ($operation) {
     if (-not $launched) {
       $command = Get-Command 'AppController.exe' -ErrorAction SilentlyContinue
       if ($null -ne $command) {
-        Start-Process -FilePath $command.Source | Out-Null
+        Start-AppControllerProcess $command.Source
         $launched = $true
         $source = $command.Source
       }
@@ -407,7 +446,7 @@ switch ($operation) {
         if (-not (Test-Path $root)) { continue }
         $shortcut = Get-ChildItem -Path $root -Filter '*AppController*.lnk' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($null -ne $shortcut) {
-          Start-Process -FilePath $shortcut.FullName | Out-Null
+          Start-AppControllerProcess $shortcut.FullName
           $launched = $true
           $source = $shortcut.FullName
           break
@@ -419,15 +458,20 @@ switch ($operation) {
       throw 'AppController.exe was not found. Set WINAUT_GOGLOBAL_APP_CONTROLLER_PATH or install App Controller for the Windows user running Orquestra Agent.'
     }
 
-    Write-Result ([PSCustomObject]@{ launched = $true; source = $source })
+    Write-Result ([PSCustomObject]@{
+      launched = $true
+      source = $source
+      host = $targetHost
+      applicationName = $applicationName
+    })
   }
 
   'connectToHost' {
     $window = Get-ClientWindow
     if ($null -eq $window) { throw 'App Controller window was not found.' }
 
-    $host = [string]$payload.host
-    if ([string]::IsNullOrWhiteSpace($host)) { throw 'GO-Global host is empty.' }
+    $targetHost = [string]$payload.host
+    if ([string]::IsNullOrWhiteSpace($targetHost)) { throw 'GO-Global host is empty.' }
 
     $edit = Find-NamedElement $window '(?i)(host|address|endere[cç]o|servidor)' @('ControlType.Edit')
     if ($null -eq $edit) {
@@ -435,7 +479,7 @@ switch ($operation) {
       if ($edits.Count -eq 0) { throw 'Host Address input was not found in App Controller.' }
       $edit = $edits[0]
     }
-    Set-ElementValue $edit $host
+    Set-ElementValue $edit $targetHost
 
     $button = Find-NamedElement $window '(?i)^(connect|conectar)$' @('ControlType.Button')
     if ($null -eq $button) { throw 'Connect button was not found in App Controller.' }
@@ -444,11 +488,11 @@ switch ($operation) {
   }
 
   'inspectState' {
-    $winThor = Get-WinThorWindow
-    if ($null -ne $winThor) {
+    $goGlobalLogin = Get-GoGlobalLoginWindow
+    if ($null -ne $goGlobalLogin) {
       Write-Result ([PSCustomObject]@{
-        state = '${GoGlobalDesktopState.WINTHOR_READY}'
-        windowTitle = [string]$winThor.Current.Name
+        state = '${GoGlobalDesktopState.LOGIN_REQUIRED}'
+        windowTitle = [string]$goGlobalLogin.Current.Name
       })
       break
     }
@@ -458,6 +502,15 @@ switch ($operation) {
       Write-Result ([PSCustomObject]@{
         state = '${GoGlobalDesktopState.LOGIN_REQUIRED}'
         windowTitle = [string]$login.Current.Name
+      })
+      break
+    }
+
+    $winThor = Get-WinThorWindow
+    if ($null -ne $winThor) {
+      Write-Result ([PSCustomObject]@{
+        state = '${GoGlobalDesktopState.WINTHOR_READY}'
+        windowTitle = [string]$winThor.Current.Name
       })
       break
     }
@@ -480,10 +533,16 @@ switch ($operation) {
   }
 
   'authenticate' {
-    $window = Get-LoginWindow
+    $window = Get-GoGlobalLoginWindow
+    if ($null -eq $window) { $window = Get-LoginWindow }
     if ($null -eq $window) { throw 'GO-Global login window was not found.' }
 
-    $edits = @(Get-ElementsByType $window 'Edit')
+    $edits = @()
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+      $edits = @(Get-ElementsByType $window 'Edit')
+      if ($edits.Count -ge 2) { break }
+      Start-Sleep -Milliseconds 250
+    }
     $usernameEdit = Find-NamedElement $window '(?i)(user\s*name|username|usu[aá]rio|login)' @('ControlType.Edit')
     $passwordEdit = Find-NamedElement $window '(?i)(password|senha|pass)' @('ControlType.Edit')
 

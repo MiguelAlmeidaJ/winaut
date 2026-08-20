@@ -17,6 +17,7 @@ import {
   type GoGlobalDesktopInspection,
 } from '../windows/go-global-desktop-driver.interface.js';
 import {
+  WinThorAuthenticationRequiredError,
   WinThorGoGlobalCredentialNotConfiguredError,
   WinThorGoGlobalEndpointNotConfiguredError,
   WinThorGoGlobalSessionStateError,
@@ -56,18 +57,39 @@ class FakeGoGlobalDriver implements GoGlobalDesktopDriver {
     windowTitle: 'AppController',
   };
   readonly actions: string[] = [];
+  readonly inspections: GoGlobalDesktopInspection[] = [];
+  private autoLaunchRequested = false;
 
   findClient(): Promise<GoGlobalClientWindow | null> {
     return Promise.resolve(this.client);
   }
 
-  launchClient(): Promise<void> {
-    this.actions.push('launchClient');
+  launchClient(
+    host?: string | null,
+    applicationName?: string | null,
+  ): Promise<void> {
+    this.actions.push(
+      `launchClient:${host ?? ''}:${applicationName ?? ''}`,
+    );
+    this.autoLaunchRequested = Boolean(host && applicationName);
     this.client = {
       processId: 101,
       processName: 'AppController',
       title: 'AppController',
     };
+    if (host) {
+      this.state = {
+        state: GoGlobalDesktopState.LOGIN_REQUIRED,
+        windowTitle: 'TOTVS Cloud - Linha Winthor',
+      };
+      this.inspections.push(
+        {
+          state: GoGlobalDesktopState.APPLICATION_CATALOG,
+          windowTitle: 'AppController starting',
+        },
+        this.state,
+      );
+    }
     return Promise.resolve();
   }
 
@@ -81,15 +103,36 @@ class FakeGoGlobalDriver implements GoGlobalDesktopDriver {
   }
 
   inspectState(): Promise<GoGlobalDesktopInspection> {
-    return Promise.resolve(this.state);
+    return Promise.resolve(this.inspections.shift() ?? this.state);
   }
 
   authenticate(username: string, password: string): Promise<void> {
     this.actions.push(`authenticate:${username}:${password}`);
-    this.state = {
-      state: GoGlobalDesktopState.APPLICATION_CATALOG,
-      windowTitle: 'GO-Global',
-    };
+
+    if (this.autoLaunchRequested) {
+      this.state = {
+        state: GoGlobalDesktopState.LOGIN_REQUIRED,
+        windowTitle:
+          'TOTVS Cloud - Linha WinThor - Test Company - Production',
+      };
+      this.inspections.push(
+        {
+          state: GoGlobalDesktopState.APPLICATION_CATALOG,
+          windowTitle: 'Please wait...',
+        },
+        {
+          state: GoGlobalDesktopState.WINTHOR_READY,
+          windowTitle: 'TOTVS Cloud - Linha WinThor - starting',
+        },
+        this.state,
+      );
+    } else {
+      this.state = {
+        state: GoGlobalDesktopState.APPLICATION_CATALOG,
+        windowTitle: 'GO-Global',
+      };
+    }
+
     return Promise.resolve();
   }
 
@@ -126,21 +169,48 @@ describe('GoGlobalWinThorSession', () => {
     });
 
     await session.connect();
-    await session.ensureAuthenticated();
-    await session.openRoutine(101);
+    await assert.rejects(
+      () => session.ensureAuthenticated(),
+      WinThorAuthenticationRequiredError,
+    );
     await session.disconnect();
 
     assert.deepEqual(credentialResolver.references, [
       'windows-credential:orquestra/winthor/producao',
     ]);
     assert.deepEqual(driver.actions, [
-      'launchClient',
-      'connect:cliente.cloudtotvs.com.br',
+      'launchClient:cliente.cloudtotvs.com.br:WinThor',
       'authenticate:ORQUESTRA:segredo',
-      'launchApplication:WinThor',
-      'openRoutine:101',
       'closeSession',
     ]);
+  });
+
+  it('normalizes URL-style Host Address before connecting App Controller', async () => {
+    const cases = [
+      ['https://cliente.cloudtotvs.com.br/', 'cliente.cloudtotvs.com.br'],
+      ['http://cliente.cloudtotvs.com.br/', 'cliente.cloudtotvs.com.br'],
+      ['cliente.cloudtotvs.com.br', 'cliente.cloudtotvs.com.br'],
+      ['cliente.cloudtotvs.com.br:491', 'cliente.cloudtotvs.com.br:491'],
+    ] as const;
+
+    for (const [endpoint, expectedHost] of cases) {
+      const driver = new FakeGoGlobalDriver();
+      const session = new GoGlobalWinThorSession(
+        { ...profile, endpoint },
+        {
+          driver,
+          credentialResolver: new FakeCredentialResolver(),
+          connectTimeoutMs: 50,
+          pollIntervalMs: 1,
+        },
+      );
+
+      await session.connect();
+
+      assert.deepEqual(driver.actions, [
+        `launchClient:${expectedHost}:WinThor`,
+      ]);
+    }
   });
 
   it('reuses an authenticated existing session without closing it', async () => {

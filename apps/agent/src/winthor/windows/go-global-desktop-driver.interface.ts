@@ -21,7 +21,10 @@ export interface GoGlobalDesktopInspection {
 
 export interface GoGlobalDesktopDriver {
   findClient(): Promise<GoGlobalClientWindow | null>;
-  launchClient(): Promise<void>;
+  launchClient(
+    host?: string | null,
+    applicationName?: string | null,
+  ): Promise<void>;
   connectToHost(host: string): Promise<void>;
   inspectState(): Promise<GoGlobalDesktopInspection>;
   authenticate(username: string, password: string): Promise<void>;

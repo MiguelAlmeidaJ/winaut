@@ -6,6 +6,7 @@ import { WinThorExecutionMode } from '@winaut/contracts';
 
 import { AgentApiClient } from '../communication/agent-api-client.js';
 import { loadInstalledAgentEnvironment } from '../config/load-installed-agent-environment.js';
+import { WinThorAuthenticationRequiredError } from '../winthor/sessions/winthor-session.errors.js';
 import { GoGlobalWinThorSession } from '../winthor/sessions/go-global-winthor.session.js';
 
 function routineCodeArgument(): number {
@@ -84,18 +85,37 @@ async function main(): Promise<void> {
     console.log('[Diagnostic GO_GLOBAL] Opening App Controller...');
     await session.connect();
 
-    console.log('[Diagnostic GO_GLOBAL] Authenticating GO-Global...');
-    await session.ensureAuthenticated();
-
-    console.log(
-      `[Diagnostic GO_GLOBAL] Opening WinThor routine ${routineCode}. No business action will be executed inside the routine.`,
-    );
-    await session.openRoutine(routineCode);
-
     const holdMs = positiveIntegerEnvironment(
       'WINAUT_GOGLOBAL_DIAGNOSTIC_HOLD_MS',
       3_000,
     );
+
+    try {
+      console.log('[Diagnostic GO_GLOBAL] Authenticating GO-Global...');
+      await session.ensureAuthenticated();
+
+      console.log(
+        `[Diagnostic GO_GLOBAL] Opening WinThor routine ${routineCode}. No business action will be executed inside the routine.`,
+      );
+      await session.openRoutine(routineCode);
+    } catch (error) {
+      if (error instanceof WinThorAuthenticationRequiredError) {
+        console.log(
+          '[Diagnostic GO_GLOBAL] WinThor internal login reached. Internal WinThor authentication is intentionally not automated yet.',
+        );
+        console.log(
+          `[Diagnostic GO_GLOBAL] Routine ${routineCode} will NOT be opened. Holding the login screen for ${holdMs}ms for visual inspection...`,
+        );
+        await sleep(holdMs);
+        console.log(
+          '[Diagnostic GO_GLOBAL] Auto-launch test succeeded up to the WinThor internal login.',
+        );
+        return;
+      }
+
+      throw error;
+    }
+
     console.log(
       `[Diagnostic GO_GLOBAL] Routine opened. Holding the session for ${holdMs}ms for visual inspection...`,
     );
