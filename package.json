@@ -19,6 +19,7 @@
     "db:ps": "docker compose --env-file apps/api/.env -f apps/api/docker-compose.yml ps",
     "prisma:generate": "pnpm --filter @winaut/api prisma:generate",
     "prisma:validate": "pnpm --filter @winaut/api prisma:validate",
+    "prisma:migrate:deploy": "pnpm --filter @winaut/api prisma:migrate:deploy",
     "dev:web": "pnpm --filter @winaut/web dev",
     "build:web": "pnpm --filter @winaut/web build",
     "lint:web": "pnpm --filter @winaut/web lint"

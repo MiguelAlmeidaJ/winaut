@@ -45,6 +45,22 @@ describe('loadInstalledAgentEnvironment', () => {
     assert.equal(environment.token, 'stored-token');
   });
 
+  it('prefers the secure installation when explicitly requested', async () => {
+    process.env.WINAUT_API_URL = 'http://localhost:3301';
+    process.env.WINAUT_AGENT_TOKEN = 'stale-env-token';
+
+    const environment = await loadInstalledAgentEnvironment(
+      new FakeStore({
+        apiUrl: 'https://api.orquestra.example',
+        token: 'stored-token',
+      }),
+      { preferInstalledCredentials: true },
+    );
+
+    assert.equal(environment.apiUrl, 'https://api.orquestra.example');
+    assert.equal(environment.token, 'stored-token');
+  });
+
   it('keeps explicit environment variables as development overrides', async () => {
     process.env.WINAUT_API_URL = 'http://localhost:3301';
     process.env.WINAUT_AGENT_TOKEN = 'env-token';

@@ -1,16 +1,17 @@
 {
   "name": "@winaut/agent",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "commonjs",
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "configure:goglobal-credential": "pnpm build && node dist/tools/configure-go-global-credential.js",
     "diagnose:507": "pnpm build && node dist/diagnostics/routine-507-open.diagnostic.js",
     "diagnose:goglobal": "pnpm build && node dist/diagnostics/go-global-open.diagnostic.js",
     "enroll": "pnpm build && node dist/enrollment/enroll.js",
     "start": "node dist/cli.js",
-    "test": "pnpm build && node --test dist/winthor/sessions/winthor-session.factory.test.js dist/runtime/agent-runtime.test.js dist/jobs/winthor-agent-job-handler.test.js dist/winthor/sessions/local-winthor.session.test.js dist/winthor/sessions/go-global-winthor.session.test.js dist/config/load-installed-agent-environment.test.js dist/runtime/agent-single-instance-lock.test.js",
+    "test": "pnpm build && node --test dist/winthor/sessions/winthor-session.factory.test.js dist/runtime/agent-runtime.test.js dist/jobs/winthor-agent-job-handler.test.js dist/winthor/sessions/local-winthor.session.test.js dist/winthor/sessions/go-global-winthor.session.test.js dist/config/load-installed-agent-environment.test.js dist/runtime/agent-single-instance-lock.test.js dist/winthor/credentials/powershell-windows-credential.provisioner.test.js",
     "package:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./installer/build-windows-installer.ps1"
   },
   "dependencies": {

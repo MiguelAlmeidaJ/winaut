@@ -7,7 +7,7 @@
 
 #define MyAppName "Orquestra Agent"
 #define MyAppPublisher "Orquestra"
-#define MyAppId "{2C44457A-970A-4C7C-901F-9C34158F830B}"
+#define MyAppId "{{2C44457A-970A-4C7C-901F-9C34158F830B}"
 
 [Setup]
 AppId={#MyAppId}
@@ -31,6 +31,8 @@ RestartApplications=no
 Source: "{#PayloadRoot}\app\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PayloadRoot}\runtime\node.exe"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "{#SourcePath}\start-agent.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\configure-go-global-credential.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\diagnose-go-global.cmd"; DestDir: "{app}"; Flags: ignoreversion
 
 [UninstallDelete]
 Type: files; Name: "{userstartup}\Orquestra Agent.lnk"
@@ -115,6 +117,28 @@ begin
   );
 
   CreateShellLink(
+    StartMenuDir + '\Configurar credencial GO_GLOBAL.lnk',
+    'Configura a credencial segura usada pelo App Controller/GO-Global',
+    ExpandConstant('{app}\configure-go-global-credential.cmd'),
+    '',
+    ExpandConstant('{app}'),
+    '',
+    0,
+    SW_SHOWNORMAL
+  );
+
+  CreateShellLink(
+    StartMenuDir + '\Diagnosticar GO_GLOBAL - rotina 101.lnk',
+    'Abre App Controller, WinThor e a rotina 101 sem executar ação de negócio',
+    ExpandConstant('{app}\diagnose-go-global.cmd'),
+    '',
+    ExpandConstant('{app}'),
+    '',
+    0,
+    SW_SHOWNORMAL
+  );
+
+  CreateShellLink(
     ExpandConstant('{userstartup}\Orquestra Agent.lnk'),
     'Inicia o Orquestra Agent automaticamente ao entrar no Windows',
     WScriptPath,
@@ -132,6 +156,7 @@ var
   EnrollmentScript: String;
   EnrollmentInputPath: String;
   EnrollmentInput: String;
+  EnrollmentInputLines: TArrayOfString;
   Parameters: String;
   ResultCode: Integer;
 begin
@@ -142,7 +167,14 @@ begin
     '{"apiUrl":"' + Trim(EnrollmentPage.Values[0]) + '",' +
     '"activationCode":"' + Trim(EnrollmentPage.Values[1]) + '"}';
 
-  if not SaveStringToUTF8FileWithoutBOM(EnrollmentInputPath, EnrollmentInput, False) then
+  SetArrayLength(EnrollmentInputLines, 1);
+  EnrollmentInputLines[0] := EnrollmentInput;
+
+  if not SaveStringsToUTF8FileWithoutBOM(
+    EnrollmentInputPath,
+    EnrollmentInputLines,
+    False
+  ) then
   begin
     Result := False;
     Exit;

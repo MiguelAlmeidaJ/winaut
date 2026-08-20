@@ -6,9 +6,11 @@ import type {
   AgentJob,
 } from '@winaut/contracts';
 
+import { AgentApiError } from '../communication/agent-api.errors.js';
 import type { AgentApiClient as AgentApiClientContract } from '../communication/agent-api-client.interface.js';
 import type { AgentJobHandler } from '../jobs/agent-job-handler.interface.js';
 
+const DEFAULT_STARTUP_RETRY_INTERVAL_MS = 5_000;
 const DEFAULT_JOB_POLL_INTERVAL_MS = 2_000;
 const DEFAULT_JOB_HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -17,6 +19,7 @@ interface AgentRuntimeOptions {
   version: string;
   heartbeatIntervalMs: number;
   jobLoopEnabled: boolean;
+  startupRetryIntervalMs?: number;
   jobPollIntervalMs?: number;
   jobHeartbeatIntervalMs?: number;
   jobHandler?: AgentJobHandler;
@@ -27,6 +30,7 @@ export class AgentRuntime {
   private readonly version: string;
   private readonly heartbeatIntervalMs: number;
   private readonly jobLoopEnabled: boolean;
+  private readonly startupRetryIntervalMs: number;
   private readonly jobPollIntervalMs: number;
   private readonly jobHeartbeatIntervalMs: number;
   private readonly jobHandler?: AgentJobHandler;
@@ -40,6 +44,8 @@ export class AgentRuntime {
     this.version = options.version;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs;
     this.jobLoopEnabled = options.jobLoopEnabled;
+    this.startupRetryIntervalMs =
+      options.startupRetryIntervalMs ?? DEFAULT_STARTUP_RETRY_INTERVAL_MS;
     this.jobPollIntervalMs =
       options.jobPollIntervalMs ?? DEFAULT_JOB_POLL_INTERVAL_MS;
     this.jobHeartbeatIntervalMs =
@@ -60,16 +66,9 @@ export class AgentRuntime {
       );
     }
 
-    this.config =
-      await this.apiClient.getConfig();
-
-    this.logConfiguration(this.config);
-
-    await this.sendHeartbeat();
-
-    console.log(
-      '[Agent] Initial heartbeat succeeded.',
-    );
+    if (!(await this.initialize(signal))) {
+      return;
+    }
 
     if (!this.jobLoopEnabled) {
       console.log(
@@ -87,6 +86,46 @@ export class AgentRuntime {
       this.heartbeatLoop(signal),
       this.jobLoop(signal),
     ]);
+  }
+
+  private async initialize(signal: AbortSignal): Promise<boolean> {
+    while (!signal.aborted) {
+      try {
+        this.config = await this.apiClient.getConfig();
+        this.logConfiguration(this.config);
+
+        await this.sendHeartbeat();
+
+        console.log(
+          '[Agent] Initial heartbeat succeeded.',
+        );
+
+        return true;
+      } catch (error) {
+        if (!this.isRetryableStartupError(error)) {
+          throw error;
+        }
+
+        console.error(
+          `[Agent] API unavailable during startup: ${this.formatError(error)}. ` +
+            `Retrying in ${this.startupRetryIntervalMs}ms.`,
+        );
+
+        if (!(await this.delay(this.startupRetryIntervalMs, signal))) {
+          return false;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private isRetryableStartupError(error: unknown): boolean {
+    if (!(error instanceof AgentApiError)) {
+      return true;
+    }
+
+    return error.status !== 401 && error.status !== 403;
   }
 
   private async heartbeatLoop(

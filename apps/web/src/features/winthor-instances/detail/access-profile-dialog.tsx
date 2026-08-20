@@ -184,12 +184,15 @@ export function AccessProfileDialog({
                   maxLength={500}
                   value={secretReference}
                   onChange={(event) => setSecretReference(event.target.value)}
-                  placeholder="windows-credential-manager://..."
+                  placeholder="windows-credential:Orquestra/WinThor/GO_GLOBAL"
                   className="mt-1 block w-full rounded-md border border-[var(--border)] px-3 py-2 font-mono text-sm outline-none focus:border-[var(--accent)]"
                 />
                 <span className="mt-1 block text-xs font-normal text-[var(--muted)]">
                   Esta referência deve apontar para um segredo armazenado fora do
-                  frontend. Não informe o valor secreto.
+                  frontend. Para o Agent Windows, use{' '}
+                  <span className="font-mono">windows-credential:&lt;target&gt;</span>.
+                  Não informe o valor secreto. Depois salve a senha pelo atalho
+                  “Configurar credencial GO_GLOBAL” na máquina do Agent.
                 </span>
               </label>
 

@@ -11,12 +11,16 @@ export const agentKeys = {
 export const agentsQueryOptions = queryOptions({
   queryKey: agentKeys.all,
   queryFn: () => apiClient.getAgents(),
+  refetchInterval: 15_000,
+  refetchIntervalInBackground: false,
 });
 
 export function agentQueryOptions(id: string) {
   return queryOptions({
     queryKey: agentKeys.detail(id),
     queryFn: () => apiClient.getAgent(id),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 }
 

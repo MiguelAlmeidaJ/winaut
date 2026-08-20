@@ -30,7 +30,7 @@ export function AccessProfilesSection({
   return (
     <DetailSection
       title="Perfis de acesso"
-      description="Somente metadados seguros de conexão. Nenhum segredo em plaintext é exibido."
+      description="Metadados de conexão apenas. Senhas GO_GLOBAL ficam no Windows Credential Manager da máquina do Agent e nunca são exibidas pelo painel."
       action={
         <AccessProfileDialog
           winthorInstanceId={winthorInstanceId}

@@ -68,7 +68,7 @@ class FakeApiClient implements AgentApiClient {
   private claimed = false;
 
   constructor(
-    private readonly controller: AbortController,
+    protected readonly controller: AbortController,
   ) {}
 
   getConfig(): Promise<AgentConfig> {
@@ -122,6 +122,25 @@ class FakeApiClient implements AgentApiClient {
   }
 }
 
+class FlakyStartupApiClient extends FakeApiClient {
+  getConfigAttempts = 0;
+
+  override getConfig(): Promise<AgentConfig> {
+    this.getConfigAttempts += 1;
+
+    if (this.getConfigAttempts === 1) {
+      return Promise.reject(new TypeError('fetch failed'));
+    }
+
+    return Promise.resolve(agentConfig);
+  }
+
+  override heartbeat(_input: AgentHeartbeatInput): Promise<void> {
+    this.controller.abort();
+    return Promise.resolve();
+  }
+}
+
 function runtime(
   apiClient: AgentApiClient,
   jobHandler?: AgentJobHandler,
@@ -138,6 +157,23 @@ function runtime(
 }
 
 describe('AgentRuntime job loop', () => {
+  it('retries startup when the API is temporarily unavailable', async () => {
+    const controller = new AbortController();
+    const apiClient = new FlakyStartupApiClient(controller);
+
+    const connectivityRuntime = new AgentRuntime({
+      apiClient,
+      version: '0.1.0-test',
+      heartbeatIntervalMs: 60_000,
+      jobLoopEnabled: false,
+      startupRetryIntervalMs: 1,
+    });
+
+    await connectivityRuntime.start(controller.signal);
+
+    assert.equal(apiClient.getConfigAttempts, 2);
+  });
+
   it('fails fast when the loop is enabled without a handler', async () => {
     const controller = new AbortController();
     const apiClient = new FakeApiClient(controller);

@@ -9,7 +9,10 @@ import { loadInstalledAgentEnvironment } from '../config/load-installed-agent-en
 import { GoGlobalWinThorSession } from '../winthor/sessions/go-global-winthor.session.js';
 
 function routineCodeArgument(): number {
-  const raw = process.argv[2]?.trim();
+  const raw = process.argv
+    .slice(2)
+    .map((argument) => argument.trim())
+    .find((argument) => argument && argument !== '--');
   const routineCode = Number(raw);
 
   if (!raw || !Number.isInteger(routineCode) || routineCode <= 0) {
@@ -44,7 +47,10 @@ function positiveIntegerEnvironment(
 
 async function main(): Promise<void> {
   const routineCode = routineCodeArgument();
-  const environment = await loadInstalledAgentEnvironment();
+  const environment = await loadInstalledAgentEnvironment(
+    undefined,
+    { preferInstalledCredentials: true },
+  );
   const apiClient = new AgentApiClient({
     apiUrl: environment.apiUrl,
     token: environment.token,
