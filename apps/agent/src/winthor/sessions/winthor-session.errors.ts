@@ -128,6 +128,17 @@ export class WinThorGoGlobalCredentialNotConfiguredError extends Error {
   }
 }
 
+export class WinThorInternalCredentialNotConfiguredError extends Error {
+  readonly code = 'WINTHOR_INTERNAL_CREDENTIAL_NOT_CONFIGURED';
+
+  constructor(readonly reference: string) {
+    super(
+      `WinThor internal authentication credential "${reference}" is missing or incomplete. Run "pnpm --filter @winaut/agent configure:winthor-credential".`,
+    );
+    this.name = WinThorInternalCredentialNotConfiguredError.name;
+  }
+}
+
 export class WinThorGoGlobalAuthenticationRequiredError extends Error {
   readonly code = 'WINTHOR_GOGLOBAL_AUTHENTICATION_REQUIRED';
 

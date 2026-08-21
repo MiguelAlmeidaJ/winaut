@@ -2,6 +2,17 @@ import { spawn } from 'node:child_process';
 
 const WINDOWS_CREDENTIAL_PREFIX = 'windows-credential:';
 
+export function winThorApplicationCredentialReference(
+  goGlobalReference: string,
+): string {
+  const goGlobalTarget = windowsCredentialTarget(goGlobalReference);
+  const winThorTarget = /\/GO_GLOBAL$/i.test(goGlobalTarget)
+    ? goGlobalTarget.replace(/\/GO_GLOBAL$/i, '/WINTHOR')
+    : `${goGlobalTarget}/WINTHOR`;
+
+  return `${WINDOWS_CREDENTIAL_PREFIX}${winThorTarget}`;
+}
+
 export function windowsCredentialTarget(reference: string): string {
   if (!reference.startsWith(WINDOWS_CREDENTIAL_PREFIX)) {
     throw new Error(

@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   GoGlobalDesktopState,
@@ -16,7 +19,7 @@ interface PowerShellGoGlobalDesktopDriverOptions {
   commandTimeoutMs?: number;
 }
 
-const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 
 export class PowerShellGoGlobalDesktopDriver
   implements GoGlobalDesktopDriver
@@ -96,119 +99,148 @@ export class PowerShellGoGlobalDesktopDriver
     });
   }
 
-  async launchApplication(applicationName: string): Promise<void> {
-    await this.run('launchApplication', { applicationName });
+  async launchApplication(
+    applicationName: string,
+    allowOpaqueFallback = false,
+  ): Promise<void> {
+    await this.run('launchApplication', {
+      applicationName,
+      allowOpaqueFallback,
+    });
   }
 
-  async openRoutine(routineCode: number): Promise<void> {
-    await this.run('openRoutine', { routineCode });
+  async authenticateWinThor(
+    username: string,
+    password: string,
+  ): Promise<void> {
+    await this.run('authenticateWinThor', { username, password });
+  }
+
+  async openRoutine(
+    routineCode: number,
+    allowOpaqueFallback = false,
+  ): Promise<void> {
+    await this.run('openRoutine', {
+      routineCode,
+      allowOpaqueFallback,
+    });
   }
 
   async closeSession(processId?: number | null): Promise<void> {
     await this.run('closeSession', { processId: processId ?? null });
   }
 
-  private run(
+  private async run(
     operation: string,
     payload: Record<string, unknown> = {},
   ): Promise<PowerShellResult> {
     if (process.platform !== 'win32') {
-      return Promise.reject(
-        new Error(
-          `GO_GLOBAL desktop automation requires Windows (current platform: ${process.platform}).`,
-        ),
+      throw new Error(
+        `GO_GLOBAL desktop automation requires Windows (current platform: ${process.platform}).`,
       );
     }
 
     const script = this.buildScript(operation);
+    const temporaryDirectory = await mkdtemp(
+      join(tmpdir(), 'orquestra-goglobal-'),
+    );
+    const scriptPath = join(temporaryDirectory, 'operation.ps1');
 
-    return new Promise((resolve, reject) => {
-      const child = spawn(
-        'powershell.exe',
-        [
-          '-NoLogo',
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-Command',
-          script,
-        ],
-        {
-          windowsHide: true,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        },
-      );
+    try {
+      await writeFile(scriptPath, `\uFEFF${script}`, 'utf8');
 
-      let stdout = '';
-      let stderr = '';
-      let settled = false;
-
-      const timer = setTimeout(() => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        child.kill();
-        reject(
-          new Error(
-            `App Controller operation "${operation}" timed out after ${this.commandTimeoutMs}ms.`,
-          ),
+      return await new Promise<PowerShellResult>((resolve, reject) => {
+        const child = spawn(
+          'powershell.exe',
+          [
+            '-NoLogo',
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            scriptPath,
+          ],
+          {
+            windowsHide: true,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          },
         );
-      }, this.commandTimeoutMs);
 
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (chunk: string) => {
-        stdout += chunk;
-      });
-      child.stderr.on('data', (chunk: string) => {
-        stderr += chunk;
-      });
-      child.once('error', (error) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        reject(error);
-      });
-      child.once('close', (code) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
 
-        if (code !== 0) {
+        const timer = setTimeout(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          child.kill();
           reject(
             new Error(
-              `App Controller operation "${operation}" failed: ${stderr.trim() || `PowerShell exited with code ${code}.`}`,
+              `App Controller operation "${operation}" timed out after ${this.commandTimeoutMs}ms.`,
             ),
           );
-          return;
-        }
+        }, this.commandTimeoutMs);
 
-        const text = stdout.trim();
+        child.stdout.setEncoding('utf8');
+        child.stderr.setEncoding('utf8');
+        child.stdout.on('data', (chunk: string) => {
+          stdout += chunk;
+        });
+        child.stderr.on('data', (chunk: string) => {
+          stderr += chunk;
+        });
+        child.once('error', (error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        });
+        child.once('close', (code) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
 
-        if (!text) {
-          resolve({});
-          return;
-        }
+          if (code !== 0) {
+            reject(
+              new Error(
+                `App Controller operation "${operation}" failed: ${stderr.trim() || `PowerShell exited with code ${code}.`}`,
+              ),
+            );
+            return;
+          }
 
-        try {
-          resolve(JSON.parse(text) as PowerShellResult);
-        } catch {
-          reject(
-            new Error(
-              `App Controller operation "${operation}" returned invalid JSON: ${text.slice(0, 500)}`,
-            ),
-          );
-        }
+          const text = stdout.trim();
+
+          if (!text) {
+            resolve({});
+            return;
+          }
+
+          try {
+            resolve(JSON.parse(text) as PowerShellResult);
+          } catch {
+            reject(
+              new Error(
+                `App Controller operation "${operation}" returned invalid JSON: ${text.slice(0, 500)}`,
+              ),
+            );
+          }
+        });
+
+        child.stdin.end(
+          Buffer.from(JSON.stringify(payload), 'utf8').toString('base64'),
+        );
       });
-
-      child.stdin.end(JSON.stringify(payload));
-    });
+    } finally {
+      await rm(temporaryDirectory, { recursive: true, force: true });
+    }
   }
 
   private buildScript(operation: string): string {
@@ -319,6 +351,15 @@ public static class OrquestraWin32LoginNative {
 
   [DllImport("user32.dll")]
   private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+  [DllImport("user32.dll")]
+  private static extern IntPtr GetDC(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+  [DllImport("gdi32.dll")]
+  private static extern uint GetPixel(IntPtr hdc, int x, int y);
 
   [DllImport("user32.dll")]
   private static extern bool IsWindowVisible(IntPtr hWnd);
@@ -474,6 +515,117 @@ public static class OrquestraWin32LoginNative {
     return true;
   }
 
+  public static bool DoubleClickLargeWindowRelative(
+    IntPtr hWnd,
+    double xRatio,
+    double yRatio
+  ) {
+    RECT rect;
+    if (!IsWindow(hWnd) || !GetWindowRect(hWnd, out rect)) {
+      return false;
+    }
+
+    var width = rect.Right - rect.Left;
+    var height = rect.Bottom - rect.Top;
+    if (width < 1000 || height < 600) {
+      return false;
+    }
+
+    SetForegroundWindow(hWnd);
+    Thread.Sleep(150);
+
+    var x = rect.Left + (int)Math.Round(width * xRatio);
+    var y = rect.Top + (int)Math.Round(height * yRatio);
+    SetCursorPos(x, y);
+
+    for (var click = 0; click < 2; click++) {
+      mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+      mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+      Thread.Sleep(100);
+    }
+
+    return true;
+  }
+
+  public static bool ClickLargeWindowRelative(
+    IntPtr hWnd,
+    double xRatio,
+    double yRatio
+  ) {
+    RECT rect;
+    if (!IsWindow(hWnd) || !GetWindowRect(hWnd, out rect)) {
+      return false;
+    }
+
+    var width = rect.Right - rect.Left;
+    var height = rect.Bottom - rect.Top;
+    if (width < 1000 || height < 600) {
+      return false;
+    }
+
+    SetForegroundWindow(hWnd);
+    Thread.Sleep(150);
+
+    var x = rect.Left + (int)Math.Round(width * xRatio);
+    var y = rect.Top + (int)Math.Round(height * yRatio);
+    SetCursorPos(x, y);
+    mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+    mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+    Thread.Sleep(100);
+    return true;
+  }
+
+  public static bool HasCentralVisualContent(IntPtr hWnd) {
+    RECT rect;
+    if (!IsWindow(hWnd) || !GetWindowRect(hWnd, out rect)) {
+      return false;
+    }
+
+    var width = rect.Right - rect.Left;
+    var height = rect.Bottom - rect.Top;
+    if (width < 1000 || height < 600) {
+      return false;
+    }
+
+    var screenDc = GetDC(IntPtr.Zero);
+    if (screenDc == IntPtr.Zero) {
+      return false;
+    }
+
+    var nonWhiteSamples = 0;
+    try {
+      const int columns = 36;
+      const int rows = 32;
+      for (var column = 0; column < columns; column++) {
+        var relativeX = 0.34 + (0.32 * column / (columns - 1));
+        var x = rect.Left + (int)Math.Round(width * relativeX);
+
+        for (var row = 0; row < rows; row++) {
+          var relativeY = 0.28 + (0.40 * row / (rows - 1));
+          var y = rect.Top + (int)Math.Round(height * relativeY);
+          var color = GetPixel(screenDc, x, y);
+          if (color == 0xFFFFFFFF) {
+            continue;
+          }
+
+          var red = (int)(color & 0xFF);
+          var green = (int)((color >> 8) & 0xFF);
+          var blue = (int)((color >> 16) & 0xFF);
+          if (red < 238 || green < 238 || blue < 238) {
+            nonWhiteSamples++;
+            if (nonWhiteSamples >= 18) {
+              return true;
+            }
+          }
+        }
+      }
+    } finally {
+      ReleaseDC(IntPtr.Zero, screenDc);
+    }
+
+    return false;
+  }
+
   private static void SendVirtualKey(ushort key, bool keyUp) {
     var input = new INPUT {
       type = INPUT_KEYBOARD,
@@ -538,7 +690,7 @@ public static class OrquestraWin32LoginNative {
 
         if (mapping == -1) {
           SendUnicodeCharacter(character);
-          Thread.Sleep(15);
+          Thread.Sleep(80);
           continue;
         }
 
@@ -559,7 +711,7 @@ public static class OrquestraWin32LoginNative {
         if (alt) SendVirtualKey(VK_MENU, true);
         if (control) SendVirtualKey(VK_CONTROL, true);
 
-        Thread.Sleep(15);
+        Thread.Sleep(80);
       }
     } finally {
       if (capsLockWasOn) {
@@ -581,12 +733,19 @@ public static class OrquestraWin32LoginNative {
     }
     Thread.Sleep(50);
     SendTextAsPhysicalKeys(targetWindow, value);
-    Thread.Sleep(50);
+    Thread.Sleep(250);
   }
 }
 '@
 
-$payloadText = [Console]::In.ReadToEnd()
+$payloadBase64 = [Console]::In.ReadToEnd().Trim()
+$payloadText = if ([string]::IsNullOrWhiteSpace($payloadBase64)) {
+  ''
+} else {
+  [System.Text.Encoding]::UTF8.GetString(
+    [System.Convert]::FromBase64String($payloadBase64)
+  )
+}
 $payload = if ([string]::IsNullOrWhiteSpace($payloadText)) {
   [PSCustomObject]@{}
 } else {
@@ -917,7 +1076,17 @@ function Wait-OpaqueGoGlobalLoginTransition([IntPtr]$handle) {
 
 function Get-ClientWindow {
   $windows = @(Get-GoGlobalWindows)
-  if ($windows.Count -gt 0) { return $windows[0] }
+  if ($windows.Count -gt 0) {
+    return @(
+      $windows | Sort-Object -Property @{
+        Expression = {
+          $rect = $_.Current.BoundingRectangle
+          [double]$rect.Width * [double]$rect.Height
+        }
+        Descending = $true
+      }
+    )[0]
+  }
   return $null
 }
 
@@ -1189,12 +1358,118 @@ switch ($operation) {
       }
     }
 
+    $allowOpaqueFallback = [bool]$payload.allowOpaqueFallback
+    if ($allowOpaqueFallback) {
+      $catalogWindow = $null
+      for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $candidate = Get-ClientWindow
+        if ($null -ne $candidate) {
+          $rect = $candidate.Current.BoundingRectangle
+          if ($rect.Width -ge 1000 -and $rect.Height -ge 600) {
+            $catalogWindow = $candidate
+            break
+          }
+        }
+        Start-Sleep -Milliseconds 250
+      }
+
+      if ($null -eq $catalogWindow) {
+        throw 'Opaque GO-Global application catalog did not become ready within 10 seconds.'
+      }
+
+      $catalogHandle = [IntPtr]$catalogWindow.Current.NativeWindowHandle
+      if (-not [OrquestraWin32LoginNative]::DoubleClickLargeWindowRelative(
+        $catalogHandle,
+        0.417,
+        0.120
+      )) {
+        throw 'Opaque GO-Global application catalog fallback refused an unexpected window geometry.'
+      }
+
+      Start-Sleep -Milliseconds 1500
+      Write-Result ([PSCustomObject]@{
+        launched = $true
+        applicationName = $applicationName
+        opaqueFallback = $true
+      })
+      break
+    }
+
     throw "Remote application '$applicationName' was not found in the GO-Global application catalog."
+  }
+
+  'authenticateWinThor' {
+    Start-Sleep -Milliseconds 5000
+    $window = $null
+    for ($attempt = 0; $attempt -lt 140; $attempt++) {
+      $candidate = Get-ClientWindow
+      if ($null -ne $candidate) {
+        $rect = $candidate.Current.BoundingRectangle
+        $candidateHandle = [IntPtr]$candidate.Current.NativeWindowHandle
+        if (
+          $rect.Width -ge 1000 -and
+          $rect.Height -ge 600 -and
+          [OrquestraWin32LoginNative]::HasCentralVisualContent($candidateHandle)
+        ) {
+          $window = $candidate
+          break
+        }
+      }
+      Start-Sleep -Milliseconds 250
+    }
+
+    if ($null -eq $window) {
+      throw 'WinThor internal login did not become ready after GO-Global access verification.'
+    }
+
+    $handle = [IntPtr]$window.Current.NativeWindowHandle
+    if (-not [OrquestraWin32LoginNative]::ClickLargeWindowRelative(
+      $handle,
+      0.516,
+      0.438
+    )) {
+      throw 'WinThor internal login fallback refused an unexpected window geometry.'
+    }
+    [OrquestraWin32LoginNative]::ReplaceFocusedText(
+      $handle,
+      ([string]$payload.username)
+    )
+
+    if (-not [OrquestraWin32LoginNative]::ClickLargeWindowRelative(
+      $handle,
+      0.516,
+      0.471
+    )) {
+      throw 'Could not focus the WinThor internal password field.'
+    }
+    [OrquestraWin32LoginNative]::ReplaceFocusedText(
+      $handle,
+      ([string]$payload.password)
+    )
+
+    if (-not [OrquestraWin32LoginNative]::ClickLargeWindowRelative(
+      $handle,
+      0.500,
+      0.638
+    )) {
+      throw 'Could not click the WinThor internal Enter button.'
+    }
+
+    Start-Sleep -Milliseconds 5000
+    Write-Result ([PSCustomObject]@{
+      authenticated = $true
+      opaqueFallback = $true
+    })
   }
 
   'openRoutine' {
     $window = Get-WinThorWindow
-    if ($null -eq $window) { throw 'WinThor window was not found inside GO-Global.' }
+    if ($null -eq $window -and [bool]$payload.allowOpaqueFallback) {
+      $window = Get-ClientWindow
+    }
+    if ($null -eq $window) {
+      throw 'WinThor window was not found inside GO-Global.'
+    }
 
     $routineCode = [int]$payload.routineCode
     $shell = New-Object -ComObject WScript.Shell

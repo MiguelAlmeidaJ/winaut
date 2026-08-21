@@ -4,20 +4,24 @@ import { URL } from 'node:url';
 import type { WinThorConnectionProfile } from '@winaut/contracts';
 
 import type { CredentialSecretResolver } from '../credentials/credential-secret-resolver.interface.js';
-import { PowerShellWindowsCredentialSecretResolver } from '../credentials/powershell-windows-credential-secret.resolver.js';
+import {
+  PowerShellWindowsCredentialSecretResolver,
+  WindowsCredentialNotFoundError,
+} from '../credentials/powershell-windows-credential-secret.resolver.js';
+import { winThorApplicationCredentialReference } from '../credentials/powershell-windows-credential.provisioner.js';
 import {
   GoGlobalDesktopState,
   type GoGlobalDesktopDriver,
 } from '../windows/go-global-desktop-driver.interface.js';
 import { PowerShellGoGlobalDesktopDriver } from '../windows/powershell-go-global-desktop.driver.js';
 import {
-  WinThorAuthenticationRequiredError,
   WinThorGoGlobalAuthenticationRequiredError,
   WinThorGoGlobalClientNotFoundError,
   WinThorGoGlobalCredentialNotConfiguredError,
   WinThorGoGlobalEndpointNotConfiguredError,
   WinThorGoGlobalSessionStateError,
   WinThorInvalidRoutineCodeError,
+  WinThorInternalCredentialNotConfiguredError,
 } from './winthor-session.errors.js';
 import type { WinThorSession } from './winthor-session.interface.js';
 
@@ -38,6 +42,11 @@ function normalizeGoGlobalHostAddress(endpoint: string): string {
   }
 
   return value.replace(/\/+$/, '');
+}
+
+function normalizeGoGlobalApplicationName(applicationName?: string | null): string {
+  const value = applicationName?.trim() || DEFAULT_APPLICATION_NAME;
+  return /^winthor$/i.test(value) ? DEFAULT_APPLICATION_NAME : value;
 }
 
 interface GoGlobalWinThorSessionOptions {
@@ -78,8 +87,9 @@ export class GoGlobalWinThorSession implements WinThorSession {
 
   async connect(): Promise<void> {
     const host = normalizeGoGlobalHostAddress(this.profile?.endpoint ?? '');
-    const applicationName =
-      this.profile?.applicationName?.trim() || DEFAULT_APPLICATION_NAME;
+    const applicationName = normalizeGoGlobalApplicationName(
+      this.profile?.applicationName,
+    );
 
     if (!host) {
       throw new WinThorGoGlobalEndpointNotConfiguredError();
@@ -142,9 +152,45 @@ export class GoGlobalWinThorSession implements WinThorSession {
 
       await this.driver.authenticate(username, credential.secret, true);
 
-      throw new WinThorAuthenticationRequiredError(
-        'WinThor internal login after GO-Global auto-launch',
+      if (!this.applicationAutoLaunchRequested) {
+        await this.driver.launchApplication(
+          normalizeGoGlobalApplicationName(this.profile?.applicationName),
+          true,
+        );
+      }
+
+      const winThorReference =
+        winThorApplicationCredentialReference(reference);
+      let winThorCredential;
+
+      try {
+        winThorCredential =
+          await this.credentialResolver.resolve(winThorReference);
+      } catch (error) {
+        if (error instanceof WindowsCredentialNotFoundError) {
+          throw new WinThorInternalCredentialNotConfiguredError(
+            winThorReference,
+          );
+        }
+
+        throw error;
+      }
+
+      const winThorUsername = winThorCredential.username?.trim();
+
+      if (!winThorUsername || !winThorCredential.secret) {
+        throw new WinThorInternalCredentialNotConfiguredError(
+          winThorReference,
+        );
+      }
+
+      await this.driver.authenticateWinThor(
+        winThorUsername,
+        winThorCredential.secret,
       );
+
+      this.authenticated = true;
+      return;
     }
 
     let state = await this.driver.inspectState();
@@ -202,16 +248,15 @@ export class GoGlobalWinThorSession implements WinThorSession {
     }
 
     if (this.applicationAutoLaunchRequested) {
-      throw new WinThorAuthenticationRequiredError(
-        'WinThor internal login after GO-Global auto-launch',
-      );
+      await this.driver.openRoutine(routineCode, true);
+      return;
     }
 
     let state = await this.driver.inspectState();
 
     if (state.state === GoGlobalDesktopState.APPLICATION_CATALOG) {
       await this.driver.launchApplication(
-        this.profile?.applicationName?.trim() || DEFAULT_APPLICATION_NAME,
+        normalizeGoGlobalApplicationName(this.profile?.applicationName),
       );
       state = await this.waitForState(
         [GoGlobalDesktopState.WINTHOR_READY],

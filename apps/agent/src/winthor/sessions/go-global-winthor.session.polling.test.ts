@@ -89,6 +89,13 @@ class InspectFailureAfterLaunchDriver implements GoGlobalDesktopDriver {
     return Promise.resolve();
   }
 
+  authenticateWinThor(
+    _username: string,
+    _password: string,
+  ): Promise<void> {
+    return Promise.resolve();
+  }
+
   openRoutine(_routineCode: number): Promise<void> {
     return Promise.resolve();
   }

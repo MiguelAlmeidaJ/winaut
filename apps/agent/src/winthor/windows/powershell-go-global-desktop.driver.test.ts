@@ -124,10 +124,83 @@ describe('PowerShellGoGlobalDesktopDriver', () => {
       /SendVirtualKey\(VK_CONTROL, true\)[\s\S]*index < 128[\s\S]*SendVirtualKey\(VK_BACK, false\)[\s\S]*SendTextAsPhysicalKeys\(targetWindow, value\)/,
     );
     assert.match(script, /VkKeyScanExW\(character, layout\)/);
-    assert.match(script, /Thread\.Sleep\(15\)/);
+    assert.match(script, /Thread\.Sleep\(80\)/);
     assert.match(
       script,
       /\$rect\.Height -ge 120[\s\S]*\$rect\.Height -lt 220[\s\S]*GO-Global rejected the submitted username or password/,
+    );
+  });
+
+  it('decodes the stdin payload explicitly as UTF-8', () => {
+    const driver = new PowerShellGoGlobalDesktopDriver();
+    const script = (
+      driver as unknown as {
+        buildScript(operation: string): string;
+      }
+    ).buildScript('authenticate');
+
+    assert.match(script, /FromBase64String\(\$payloadBase64\)/);
+    assert.match(script, /Encoding\]::UTF8\.GetString/);
+  });
+
+  it('guards opaque application catalog launching behind the auto-launch flag', () => {
+    const driver = new PowerShellGoGlobalDesktopDriver();
+    const script = (
+      driver as unknown as {
+        buildScript(operation: string): string;
+      }
+    ).buildScript('launchApplication');
+
+    assert.match(
+      script,
+      /\$allowOpaqueFallback = \[bool\]\$payload\.allowOpaqueFallback/,
+    );
+    assert.match(
+      script,
+      /if \(\$allowOpaqueFallback\)[\s\S]*DoubleClickLargeWindowRelative\([\s\S]*0\.417,[\s\S]*0\.120/,
+    );
+    assert.match(
+      script,
+      /Sort-Object -Property[\s\S]*BoundingRectangle[\s\S]*Descending = \$true/,
+    );
+    assert.match(
+      script,
+      /\$rect\.Width -ge 1000 -and \$rect\.Height -ge 600/,
+    );
+  });
+
+  it('fills the opaque WinThor login and enables opaque routine navigation', () => {
+    const driver = new PowerShellGoGlobalDesktopDriver();
+    const authenticateScript = (
+      driver as unknown as {
+        buildScript(operation: string): string;
+      }
+    ).buildScript('authenticateWinThor');
+    const routineScript = (
+      driver as unknown as {
+        buildScript(operation: string): string;
+      }
+    ).buildScript('openRoutine');
+
+    assert.match(
+      authenticateScript,
+      /ClickLargeWindowRelative\([\s\S]*0\.516,[\s\S]*0\.438/,
+    );
+    assert.match(
+      authenticateScript,
+      /Start-Sleep -Milliseconds 5000[\s\S]*\$attempt -lt 140[\s\S]*HasCentralVisualContent\(\$candidateHandle\)/,
+    );
+    assert.match(
+      authenticateScript,
+      /ClickLargeWindowRelative\([\s\S]*0\.516,[\s\S]*0\.471/,
+    );
+    assert.match(
+      authenticateScript,
+      /ClickLargeWindowRelative\([\s\S]*0\.500,[\s\S]*0\.638/,
+    );
+    assert.match(
+      routineScript,
+      /\$null -eq \$window -and \[bool\]\$payload\.allowOpaqueFallback/,
     );
   });
 

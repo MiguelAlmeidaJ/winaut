@@ -17,7 +17,6 @@ import {
   type GoGlobalDesktopInspection,
 } from '../windows/go-global-desktop-driver.interface.js';
 import {
-  WinThorAuthenticationRequiredError,
   WinThorGoGlobalCredentialNotConfiguredError,
   WinThorGoGlobalEndpointNotConfiguredError,
   WinThorGoGlobalSessionStateError,
@@ -39,7 +38,7 @@ class FakeCredentialResolver implements CredentialSecretResolver {
 
   constructor(
     private readonly credential: ResolvedCredentialSecret = {
-      username: null,
+      username: 'WINTHOR.USER',
       secret: 'segredo',
     },
   ) {}
@@ -143,7 +142,10 @@ class FakeGoGlobalDriver implements GoGlobalDesktopDriver {
     return Promise.resolve();
   }
 
-  launchApplication(applicationName: string): Promise<void> {
+  launchApplication(
+    applicationName: string,
+    _allowOpaqueFallback = false,
+  ): Promise<void> {
     this.actions.push(`launchApplication:${applicationName}`);
     this.state = {
       state: GoGlobalDesktopState.WINTHOR_READY,
@@ -152,7 +154,15 @@ class FakeGoGlobalDriver implements GoGlobalDesktopDriver {
     return Promise.resolve();
   }
 
-  openRoutine(routineCode: number): Promise<void> {
+  authenticateWinThor(username: string, password: string): Promise<void> {
+    this.actions.push(`authenticateWinThor:${username}:${password}`);
+    return Promise.resolve();
+  }
+
+  openRoutine(
+    routineCode: number,
+    _allowOpaqueFallback = false,
+  ): Promise<void> {
     this.actions.push(`openRoutine:${routineCode}`);
     return Promise.resolve();
   }
@@ -165,7 +175,7 @@ class FakeGoGlobalDriver implements GoGlobalDesktopDriver {
 }
 
 describe('GoGlobalWinThorSession', () => {
-  it('owns the complete App Controller lifecycle when it launches the client', async () => {
+  it('uses the -a application auto-launch and owns the complete App Controller lifecycle', async () => {
     const driver = new FakeGoGlobalDriver();
     const credentialResolver = new FakeCredentialResolver();
     const session = new GoGlobalWinThorSession(profile, {
@@ -177,18 +187,17 @@ describe('GoGlobalWinThorSession', () => {
     });
 
     await session.connect();
-    await assert.rejects(
-      () => session.ensureAuthenticated(),
-      WinThorAuthenticationRequiredError,
-    );
+    await session.ensureAuthenticated();
     await session.disconnect();
 
     assert.deepEqual(credentialResolver.references, [
       'windows-credential:orquestra/winthor/producao',
+      'windows-credential:orquestra/winthor/producao/WINTHOR',
     ]);
     assert.deepEqual(driver.actions, [
       'launchClient:cliente.cloudtotvs.com.br:WinThor',
       'authenticate:ORQUESTRA:segredo',
+      'authenticateWinThor:WINTHOR.USER:segredo',
       'closeSession',
     ]);
     assert.deepEqual(driver.opaqueAuthenticationFallbacks, [true]);
@@ -221,6 +230,25 @@ describe('GoGlobalWinThorSession', () => {
         `launchClient:${expectedHost}:WinThor`,
       ]);
     }
+  });
+
+  it('uses the exact published WinThor application name for -a', async () => {
+    const driver = new FakeGoGlobalDriver();
+    const session = new GoGlobalWinThorSession(
+      { ...profile, applicationName: 'Winthor' },
+      {
+        driver,
+        credentialResolver: new FakeCredentialResolver(),
+        connectTimeoutMs: 50,
+        pollIntervalMs: 1,
+      },
+    );
+
+    await session.connect();
+
+    assert.deepEqual(driver.actions, [
+      'launchClient:cliente.cloudtotvs.com.br:WinThor',
+    ]);
   });
 
   it('reuses an authenticated existing session without closing it', async () => {

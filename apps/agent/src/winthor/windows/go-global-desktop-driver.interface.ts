@@ -32,7 +32,14 @@ export interface GoGlobalDesktopDriver {
     password: string,
     allowOpaqueFallback?: boolean,
   ): Promise<void>;
-  launchApplication(applicationName: string): Promise<void>;
-  openRoutine(routineCode: number): Promise<void>;
+  launchApplication(
+    applicationName: string,
+    allowOpaqueFallback?: boolean,
+  ): Promise<void>;
+  authenticateWinThor(username: string, password: string): Promise<void>;
+  openRoutine(
+    routineCode: number,
+    allowOpaqueFallback?: boolean,
+  ): Promise<void>;
   closeSession(processId?: number | null): Promise<void>;
 }

@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "configure:goglobal-credential": "pnpm build && node dist/tools/configure-go-global-credential.js",
+    "configure:winthor-credential": "pnpm build && node dist/tools/configure-winthor-credential.js",
     "diagnose:507": "pnpm build && node dist/diagnostics/routine-507-open.diagnostic.js",
     "diagnose:goglobal": "pnpm build && node dist/diagnostics/go-global-open.diagnostic.js",
     "enroll": "pnpm build && node dist/enrollment/enroll.js",
