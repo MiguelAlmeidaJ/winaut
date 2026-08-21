@@ -83,4 +83,70 @@ describe('PowerShellGoGlobalDesktopDriver', () => {
       /Start-Process -FilePath \$filePath -ArgumentList \$launchArguments/,
     );
   });
+
+  it('guards opaque coordinate login behind the explicit auto-launch flag', () => {
+    const driver = new PowerShellGoGlobalDesktopDriver();
+    const script = (
+      driver as unknown as {
+        buildScript(operation: string): string;
+      }
+    ).buildScript('authenticate');
+
+    assert.match(script, /\$allowOpaqueFallback = \[bool\]\$payload\.allowOpaqueFallback/);
+    assert.match(
+      script,
+      /\$null -eq \$window -and \$allowOpaqueFallback[\s\S]*Get-OpaqueGoGlobalLoginCandidateWindow/,
+    );
+    assert.match(
+      script,
+      /if \(-not \$allowOpaqueFallback\) \{ throw \}[\s\S]*Invoke-OpaqueGoGlobalLoginByCoordinates/,
+    );
+  });
+
+  it('uses Win32 controls before the guarded coordinate fallback', () => {
+    const driver = new PowerShellGoGlobalDesktopDriver();
+    const script = (
+      driver as unknown as {
+        buildScript(operation: string): string;
+      }
+    ).buildScript('authenticate');
+
+    const win32Index = script.indexOf('Invoke-Win32GoGlobalLogin $window');
+    const opaqueIndex = script.indexOf(
+      'Invoke-OpaqueGoGlobalLoginByCoordinates $window',
+    );
+
+    assert.ok(win32Index >= 0);
+    assert.ok(opaqueIndex > win32Index);
+    assert.match(script, /Wait-OpaqueGoGlobalLoginTransition \$loginHandle/);
+    assert.match(
+      script,
+      /SendVirtualKey\(VK_CONTROL, true\)[\s\S]*index < 128[\s\S]*SendVirtualKey\(VK_BACK, false\)[\s\S]*SendTextAsPhysicalKeys\(targetWindow, value\)/,
+    );
+    assert.match(script, /VkKeyScanExW\(character, layout\)/);
+    assert.match(script, /Thread\.Sleep\(15\)/);
+    assert.match(
+      script,
+      /\$rect\.Height -ge 120[\s\S]*\$rect\.Height -lt 220[\s\S]*GO-Global rejected the submitted username or password/,
+    );
+  });
+
+  it('falls back to WM_CLOSE for opaque GO-Global windows', () => {
+    const driver = new PowerShellGoGlobalDesktopDriver();
+    const script = (
+      driver as unknown as {
+        buildScript(operation: string): string;
+      }
+    ).buildScript('closeSession');
+
+    assert.match(script, /private const uint WM_CLOSE = 0x0010/);
+    assert.match(
+      script,
+      /if \(-not \$closedWindow\)[\s\S]*CloseWindow\(\$handle\)/,
+    );
+    assert.match(
+      script,
+      /\$ownedProcessId = \[int\]\$payload\.processId[\s\S]*Stop-Process -Id \$ownedProcessId -Force/,
+    );
+  });
 });

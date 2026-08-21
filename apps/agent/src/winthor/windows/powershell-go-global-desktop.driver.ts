@@ -84,8 +84,16 @@ export class PowerShellGoGlobalDesktopDriver
     };
   }
 
-  async authenticate(username: string, password: string): Promise<void> {
-    await this.run('authenticate', { username, password });
+  async authenticate(
+    username: string,
+    password: string,
+    allowOpaqueFallback = false,
+  ): Promise<void> {
+    await this.run('authenticate', {
+      username,
+      password,
+      allowOpaqueFallback,
+    });
   }
 
   async launchApplication(applicationName: string): Promise<void> {
@@ -96,8 +104,8 @@ export class PowerShellGoGlobalDesktopDriver
     await this.run('openRoutine', { routineCode });
   }
 
-  async closeSession(): Promise<void> {
-    await this.run('closeSession');
+  async closeSession(processId?: number | null): Promise<void> {
+    await this.run('closeSession', { processId: processId ?? null });
   }
 
   private run(
@@ -208,6 +216,375 @@ export class PowerShellGoGlobalDesktopDriver
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+
+public sealed class OrquestraWin32ControlInfo {
+  public IntPtr Handle;
+  public string ClassName;
+  public string Text;
+  public int Left;
+  public int Top;
+}
+
+public static class OrquestraWin32LoginNative {
+  private const uint WM_SETTEXT = 0x000C;
+  private const uint WM_CLOSE = 0x0010;
+  private const uint BM_CLICK = 0x00F5;
+  private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+  private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+  private const uint INPUT_KEYBOARD = 1;
+  private const uint KEYEVENTF_KEYUP = 0x0002;
+  private const uint KEYEVENTF_UNICODE = 0x0004;
+  private const ushort VK_BACK = 0x08;
+  private const ushort VK_SHIFT = 0x10;
+  private const ushort VK_CONTROL = 0x11;
+  private const ushort VK_MENU = 0x12;
+  private const ushort VK_CAPITAL = 0x14;
+  private const ushort VK_A = 0x41;
+
+  private delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct RECT {
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct MOUSEINPUT {
+    public int dx;
+    public int dy;
+    public uint mouseData;
+    public uint dwFlags;
+    public uint time;
+    public IntPtr dwExtraInfo;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct KEYBDINPUT {
+    public ushort wVk;
+    public ushort wScan;
+    public uint dwFlags;
+    public uint time;
+    public IntPtr dwExtraInfo;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct HARDWAREINPUT {
+    public uint uMsg;
+    public ushort wParamL;
+    public ushort wParamH;
+  }
+
+  [StructLayout(LayoutKind.Explicit)]
+  private struct InputUnion {
+    [FieldOffset(0)] public MOUSEINPUT mi;
+    [FieldOffset(0)] public KEYBDINPUT ki;
+    [FieldOffset(0)] public HARDWAREINPUT hi;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct INPUT {
+    public uint type;
+    public InputUnion U;
+  }
+
+  [DllImport("user32.dll")]
+  private static extern bool EnumChildWindows(
+    IntPtr hWndParent,
+    EnumChildProc lpEnumFunc,
+    IntPtr lParam
+  );
+
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  private static extern int GetClassNameW(
+    IntPtr hWnd,
+    StringBuilder lpClassName,
+    int nMaxCount
+  );
+
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  private static extern int GetWindowTextW(
+    IntPtr hWnd,
+    StringBuilder lpString,
+    int nMaxCount
+  );
+
+  [DllImport("user32.dll")]
+  private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+  [DllImport("user32.dll")]
+  private static extern bool IsWindowVisible(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  private static extern bool IsWindow(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  private static extern uint GetWindowThreadProcessId(
+    IntPtr hWnd,
+    out uint processId
+  );
+
+  [DllImport("user32.dll")]
+  private static extern IntPtr GetKeyboardLayout(uint threadId);
+
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  private static extern short VkKeyScanExW(char character, IntPtr layout);
+
+  [DllImport("user32.dll")]
+  private static extern short GetKeyState(int virtualKey);
+
+  [DllImport("user32.dll")]
+  private static extern bool SetCursorPos(int x, int y);
+
+  [DllImport("user32.dll")]
+  private static extern void mouse_event(
+    uint dwFlags,
+    uint dx,
+    uint dy,
+    uint dwData,
+    UIntPtr dwExtraInfo
+  );
+
+  [DllImport("user32.dll", SetLastError = true)]
+  private static extern uint SendInput(
+    uint nInputs,
+    INPUT[] pInputs,
+    int cbSize
+  );
+
+  [DllImport(
+    "user32.dll",
+    CharSet = CharSet.Unicode,
+    EntryPoint = "SendMessageW"
+  )]
+  private static extern IntPtr SendMessageText(
+    IntPtr hWnd,
+    uint msg,
+    IntPtr wParam,
+    string lParam
+  );
+
+  [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+  private static extern IntPtr SendMessage(
+    IntPtr hWnd,
+    uint msg,
+    IntPtr wParam,
+    IntPtr lParam
+  );
+
+  [DllImport("user32.dll", EntryPoint = "PostMessageW")]
+  private static extern bool PostMessage(
+    IntPtr hWnd,
+    uint msg,
+    IntPtr wParam,
+    IntPtr lParam
+  );
+
+  public static OrquestraWin32ControlInfo[] GetChildControls(IntPtr parent) {
+    var controls = new List<OrquestraWin32ControlInfo>();
+
+    EnumChildWindows(
+      parent,
+      delegate(IntPtr hWnd, IntPtr lParam) {
+        if (!IsWindowVisible(hWnd)) {
+          return true;
+        }
+
+        var className = new StringBuilder(256);
+        var text = new StringBuilder(512);
+        RECT rect;
+
+        GetClassNameW(hWnd, className, className.Capacity);
+        GetWindowTextW(hWnd, text, text.Capacity);
+        GetWindowRect(hWnd, out rect);
+
+        controls.Add(new OrquestraWin32ControlInfo {
+          Handle = hWnd,
+          ClassName = className.ToString(),
+          Text = text.ToString(),
+          Left = rect.Left,
+          Top = rect.Top
+        });
+
+        return true;
+      },
+      IntPtr.Zero
+    );
+
+    return controls.ToArray();
+  }
+
+  public static void SetText(IntPtr hWnd, string value) {
+    SendMessageText(hWnd, WM_SETTEXT, IntPtr.Zero, value);
+  }
+
+  public static void Click(IntPtr hWnd) {
+    SendMessage(hWnd, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+  }
+
+  public static bool CloseWindow(IntPtr hWnd) {
+    return IsWindow(hWnd) &&
+      PostMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+  }
+
+  public static bool IsExistingWindow(IntPtr hWnd) {
+    return IsWindow(hWnd);
+  }
+
+  public static bool IsExpectedOpaqueLoginWindow(IntPtr hWnd) {
+    RECT rect;
+    if (!IsWindow(hWnd) || !GetWindowRect(hWnd, out rect)) {
+      return false;
+    }
+
+    var width = rect.Right - rect.Left;
+    var height = rect.Bottom - rect.Top;
+    return width >= 360 && width <= 800 && height >= 220 && height <= 500;
+  }
+
+  public static bool ClickRelative(IntPtr hWnd, double xRatio, double yRatio) {
+    RECT rect;
+    if (!IsExpectedOpaqueLoginWindow(hWnd) || !GetWindowRect(hWnd, out rect)) {
+      return false;
+    }
+
+    SetForegroundWindow(hWnd);
+    Thread.Sleep(100);
+
+    var width = rect.Right - rect.Left;
+    var height = rect.Bottom - rect.Top;
+    var x = rect.Left + (int)Math.Round(width * xRatio);
+    var y = rect.Top + (int)Math.Round(height * yRatio);
+
+    SetCursorPos(x, y);
+    mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+    mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+    Thread.Sleep(100);
+    return true;
+  }
+
+  private static void SendVirtualKey(ushort key, bool keyUp) {
+    var input = new INPUT {
+      type = INPUT_KEYBOARD,
+      U = new InputUnion {
+        ki = new KEYBDINPUT {
+          wVk = key,
+          wScan = 0,
+          dwFlags = keyUp ? KEYEVENTF_KEYUP : 0,
+          time = 0,
+          dwExtraInfo = IntPtr.Zero
+        }
+      }
+    };
+
+    if (SendInput(1, new[] { input }, Marshal.SizeOf(typeof(INPUT))) != 1) {
+      throw new InvalidOperationException("SendInput virtual-key operation failed.");
+    }
+  }
+
+  private static void SendUnicodeCharacter(char character) {
+    var down = new INPUT {
+      type = INPUT_KEYBOARD,
+      U = new InputUnion {
+        ki = new KEYBDINPUT {
+          wVk = 0,
+          wScan = character,
+          dwFlags = KEYEVENTF_UNICODE,
+          time = 0,
+          dwExtraInfo = IntPtr.Zero
+        }
+      }
+    };
+    var up = down;
+    up.U.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+    if (SendInput(
+      2,
+      new[] { down, up },
+      Marshal.SizeOf(typeof(INPUT))
+    ) != 2) {
+      throw new InvalidOperationException("SendInput Unicode text operation failed.");
+    }
+  }
+
+  private static void SendTextAsPhysicalKeys(
+    IntPtr targetWindow,
+    string value
+  ) {
+    uint processId;
+    var threadId = GetWindowThreadProcessId(targetWindow, out processId);
+    var layout = GetKeyboardLayout(threadId);
+    var capsLockWasOn = (GetKeyState(VK_CAPITAL) & 1) != 0;
+
+    if (capsLockWasOn) {
+      SendVirtualKey(VK_CAPITAL, false);
+      SendVirtualKey(VK_CAPITAL, true);
+      Thread.Sleep(25);
+    }
+
+    try {
+      foreach (var character in value) {
+        var mapping = VkKeyScanExW(character, layout);
+
+        if (mapping == -1) {
+          SendUnicodeCharacter(character);
+          Thread.Sleep(15);
+          continue;
+        }
+
+        var key = (ushort)(mapping & 0xff);
+        var modifiers = (byte)((mapping >> 8) & 0xff);
+        var shift = (modifiers & 1) != 0;
+        var control = (modifiers & 2) != 0;
+        var alt = (modifiers & 4) != 0;
+
+        if (control) SendVirtualKey(VK_CONTROL, false);
+        if (alt) SendVirtualKey(VK_MENU, false);
+        if (shift) SendVirtualKey(VK_SHIFT, false);
+
+        SendVirtualKey(key, false);
+        SendVirtualKey(key, true);
+
+        if (shift) SendVirtualKey(VK_SHIFT, true);
+        if (alt) SendVirtualKey(VK_MENU, true);
+        if (control) SendVirtualKey(VK_CONTROL, true);
+
+        Thread.Sleep(15);
+      }
+    } finally {
+      if (capsLockWasOn) {
+        SendVirtualKey(VK_CAPITAL, false);
+        SendVirtualKey(VK_CAPITAL, true);
+      }
+    }
+  }
+
+  public static void ReplaceFocusedText(IntPtr targetWindow, string value) {
+    SendVirtualKey(VK_CONTROL, false);
+    SendVirtualKey(VK_A, false);
+    SendVirtualKey(VK_A, true);
+    SendVirtualKey(VK_CONTROL, true);
+    Thread.Sleep(50);
+    for (var index = 0; index < 128; index++) {
+      SendVirtualKey(VK_BACK, false);
+      SendVirtualKey(VK_BACK, true);
+    }
+    Thread.Sleep(50);
+    SendTextAsPhysicalKeys(targetWindow, value);
+    Thread.Sleep(50);
+  }
+}
+'@
 
 $payloadText = [Console]::In.ReadToEnd()
 $payload = if ([string]::IsNullOrWhiteSpace($payloadText)) {
@@ -360,6 +737,184 @@ function Get-LoginWindow {
   return $null
 }
 
+function Get-OpaqueGoGlobalLoginWindow {
+  foreach ($window in (Get-GoGlobalWindows)) {
+    $edits = @(Get-ElementsByType $window 'Edit')
+    $buttons = @(Get-ElementsByType $window 'Button')
+    if ($edits.Count -ge 2 -and $buttons.Count -ge 1) {
+      return $window
+    }
+  }
+  return $null
+}
+
+function Get-Win32LoginControls($window) {
+  $handle = [IntPtr]$window.Current.NativeWindowHandle
+  if ($handle -eq [IntPtr]::Zero) { return @() }
+  return @([OrquestraWin32LoginNative]::GetChildControls($handle))
+}
+
+function Get-Win32LoginCandidateWindow {
+  foreach ($window in (Get-GoGlobalWindows)) {
+    $controls = @(Get-Win32LoginControls $window)
+    $edits = @($controls | Where-Object { $_.ClassName -eq 'Edit' })
+    $buttons = @($controls | Where-Object { $_.ClassName -eq 'Button' })
+
+    if ($edits.Count -ge 2 -and $buttons.Count -ge 1) {
+      return $window
+    }
+  }
+
+  return $null
+}
+
+function Get-OpaqueGoGlobalLoginCandidateWindow {
+  foreach ($window in (Get-GoGlobalWindows)) {
+    $handle = [IntPtr]$window.Current.NativeWindowHandle
+    if (
+      $handle -ne [IntPtr]::Zero -and
+      [OrquestraWin32LoginNative]::IsExpectedOpaqueLoginWindow($handle)
+    ) {
+      return $window
+    }
+  }
+
+  return $null
+}
+
+function Invoke-Win32GoGlobalLogin(
+  $window,
+  [string]$username,
+  [string]$password
+) {
+  $handle = [IntPtr]$window.Current.NativeWindowHandle
+  if ($handle -eq [IntPtr]::Zero) {
+    throw 'GO-Global login window does not expose a native window handle.'
+  }
+
+  $controls = @(Get-Win32LoginControls $window)
+  $edits = @(
+    $controls |
+      Where-Object { $_.ClassName -eq 'Edit' } |
+      Sort-Object Top, Left
+  )
+  $buttons = @(
+    $controls |
+      Where-Object { $_.ClassName -eq 'Button' } |
+      Sort-Object Left, Top
+  )
+
+  if ($edits.Count -lt 2 -or $buttons.Count -lt 1) {
+    throw "Win32 child-control fallback found only $($edits.Count) Edit control(s) and $($buttons.Count) Button control(s)."
+  }
+
+  $loginButton = @(
+    $buttons | Where-Object {
+      $_.Text -match '(?i)^(connect|conectar|login|logon|entrar|ok)$'
+    }
+  ) | Select-Object -First 1
+
+  if ($null -eq $loginButton) {
+    $loginButton = $buttons[0]
+  }
+
+  [OrquestraWin32LoginNative]::SetText($edits[0].Handle, $username)
+  [OrquestraWin32LoginNative]::SetText($edits[1].Handle, $password)
+  [OrquestraWin32LoginNative]::Click($loginButton.Handle)
+
+  return $handle
+}
+
+function Invoke-OpaqueGoGlobalLoginByCoordinates(
+  $window,
+  [string]$username,
+  [string]$password
+) {
+  $handle = [IntPtr]$window.Current.NativeWindowHandle
+  if (
+    $handle -eq [IntPtr]::Zero -or
+    -not [OrquestraWin32LoginNative]::IsExpectedOpaqueLoginWindow($handle)
+  ) {
+    throw 'Opaque GO-Global login fallback refused an unexpected window geometry.'
+  }
+
+  if (-not [OrquestraWin32LoginNative]::ClickRelative($handle, 0.72, 0.40)) {
+    throw 'Could not focus the GO-Global username field.'
+  }
+  [OrquestraWin32LoginNative]::ReplaceFocusedText($handle, $username)
+
+  if (-not [OrquestraWin32LoginNative]::ClickRelative($handle, 0.72, 0.55)) {
+    throw 'Could not focus the GO-Global password field.'
+  }
+  [OrquestraWin32LoginNative]::ReplaceFocusedText($handle, $password)
+
+  if (-not [OrquestraWin32LoginNative]::ClickRelative($handle, 0.37, 0.81)) {
+    throw 'Could not click the GO-Global Connect button.'
+  }
+
+  return $handle
+}
+
+function Wait-Win32GoGlobalLoginTransition([IntPtr]$handle) {
+  if ($handle -eq [IntPtr]::Zero) { return }
+
+  for ($attempt = 0; $attempt -lt 60; $attempt++) {
+    if (-not [OrquestraWin32LoginNative]::IsExistingWindow($handle)) {
+      return
+    }
+
+    $controls = @(
+      [OrquestraWin32LoginNative]::GetChildControls($handle)
+    )
+    $edits = @(
+      $controls | Where-Object { $_.ClassName -eq 'Edit' }
+    )
+
+    if ($edits.Count -lt 2) {
+      return
+    }
+
+    Start-Sleep -Milliseconds 250
+  }
+
+  throw 'GO-Global credentials were submitted, but the native login controls did not transition within 15 seconds.'
+}
+
+function Wait-OpaqueGoGlobalLoginTransition([IntPtr]$handle) {
+  for ($attempt = 0; $attempt -lt 60; $attempt++) {
+    if (
+      -not [OrquestraWin32LoginNative]::IsExistingWindow($handle) -or
+      -not [OrquestraWin32LoginNative]::IsExpectedOpaqueLoginWindow($handle)
+    ) {
+      return
+    }
+
+    foreach ($window in (Get-GoGlobalWindows)) {
+      $currentHandle = [IntPtr]$window.Current.NativeWindowHandle
+      if (
+        $currentHandle -eq [IntPtr]::Zero -or
+        $currentHandle -eq $handle
+      ) {
+        continue
+      }
+
+      $rect = $window.Current.BoundingRectangle
+      if (
+        $rect.Width -ge 360 -and
+        $rect.Width -le 800 -and
+        $rect.Height -ge 120 -and
+        $rect.Height -lt 220
+      ) {
+        throw 'GO-Global rejected the submitted username or password. Update the stored Windows credential and try again.'
+      }
+    }
+
+    Start-Sleep -Milliseconds 250
+  }
+
+  throw 'GO-Global credentials were submitted, but the opaque login window did not close or resize within 15 seconds.'
+}
+
 function Get-ClientWindow {
   $windows = @(Get-GoGlobalWindows)
   if ($windows.Count -gt 0) { return $windows[0] }
@@ -506,6 +1061,15 @@ switch ($operation) {
       break
     }
 
+    $opaqueLogin = Get-OpaqueGoGlobalLoginWindow
+    if ($null -ne $opaqueLogin) {
+      Write-Result ([PSCustomObject]@{
+        state = '${GoGlobalDesktopState.LOGIN_REQUIRED}'
+        windowTitle = [string]$opaqueLogin.Current.Name
+      })
+      break
+    }
+
     $winThor = Get-WinThorWindow
     if ($null -ne $winThor) {
       Write-Result ([PSCustomObject]@{
@@ -533,12 +1097,27 @@ switch ($operation) {
   }
 
   'authenticate' {
-    $window = Get-GoGlobalLoginWindow
-    if ($null -eq $window) { $window = Get-LoginWindow }
-    if ($null -eq $window) { throw 'GO-Global login window was not found.' }
+    $allowOpaqueFallback = [bool]$payload.allowOpaqueFallback
+    $window = $null
 
-    $edits = @()
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
+      $window = Get-GoGlobalLoginWindow
+      if ($null -eq $window) { $window = Get-LoginWindow }
+      if ($null -eq $window) { $window = Get-Win32LoginCandidateWindow }
+      if ($null -eq $window -and $allowOpaqueFallback) {
+        $window = Get-OpaqueGoGlobalLoginCandidateWindow
+      }
+      if ($null -ne $window) { break }
+      Start-Sleep -Milliseconds 250
+    }
+
+    if ($null -eq $window) {
+      throw 'GO-Global login window was not found by UI Automation, Win32 controls, or the guarded opaque-login fallback.'
+    }
+
+    $loginHandle = [IntPtr]$window.Current.NativeWindowHandle
+    $edits = @()
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
       $edits = @(Get-ElementsByType $window 'Edit')
       if ($edits.Count -ge 2) { break }
       Start-Sleep -Milliseconds 250
@@ -548,17 +1127,43 @@ switch ($operation) {
 
     if ($null -eq $usernameEdit -and $edits.Count -ge 1) { $usernameEdit = $edits[0] }
     if ($null -eq $passwordEdit -and $edits.Count -ge 2) { $passwordEdit = $edits[1] }
-    if ($null -eq $usernameEdit -or $null -eq $passwordEdit) {
-      throw 'Username/password inputs were not found in GO-Global login.'
+
+    $submitted = $false
+    $usedOpaqueFallback = $false
+
+    if ($null -ne $usernameEdit -and $null -ne $passwordEdit) {
+      $button = Find-NamedElement $window '(?i)^(login|logon|sign\s*in|entrar|ok|connect|conectar)$' @('ControlType.Button')
+      if ($null -ne $button) {
+        Set-ElementValue $usernameEdit ([string]$payload.username)
+        Set-ElementValue $passwordEdit ([string]$payload.password)
+        Invoke-Element $button
+        $submitted = $true
+      }
     }
 
-    Set-ElementValue $usernameEdit ([string]$payload.username)
-    Set-ElementValue $passwordEdit ([string]$payload.password)
+    if (-not $submitted) {
+      try {
+        $loginHandle = Invoke-Win32GoGlobalLogin $window ([string]$payload.username) ([string]$payload.password)
+        $submitted = $true
+      } catch {
+        if (-not $allowOpaqueFallback) { throw }
 
-    $button = Find-NamedElement $window '(?i)^(login|logon|sign\s*in|entrar|ok|connect|conectar)$' @('ControlType.Button')
-    if ($null -eq $button) { throw 'Login button was not found in GO-Global.' }
-    Invoke-Element $button
-    Write-Result ([PSCustomObject]@{ authenticated = $true })
+        $loginHandle = Invoke-OpaqueGoGlobalLoginByCoordinates $window ([string]$payload.username) ([string]$payload.password)
+        $submitted = $true
+        $usedOpaqueFallback = $true
+      }
+    }
+
+    if ($usedOpaqueFallback) {
+      Wait-OpaqueGoGlobalLoginTransition $loginHandle
+    } else {
+      Wait-Win32GoGlobalLoginTransition $loginHandle
+    }
+
+    Write-Result ([PSCustomObject]@{
+      authenticated = $true
+      opaqueFallback = $usedOpaqueFallback
+    })
   }
 
   'launchApplication' {
@@ -604,8 +1209,17 @@ switch ($operation) {
 
   'closeSession' {
     $closed = 0
+    $ownedProcessId = [int]$payload.processId
     foreach ($window in (Get-TopWindows)) {
       if ((Test-GoGlobalWindow $window) -or ([string]$window.Current.Name -match '(?i)WinThor')) {
+        if (
+          $ownedProcessId -gt 0 -and
+          $window.Current.ProcessId -ne $ownedProcessId
+        ) {
+          continue
+        }
+
+        $closedWindow = $false
         $pattern = $null
         if ($window.TryGetCurrentPattern(
           [System.Windows.Automation.WindowPattern]::Pattern,
@@ -613,12 +1227,36 @@ switch ($operation) {
         )) {
           try {
             ([System.Windows.Automation.WindowPattern]$pattern).Close()
-            $closed++
+            $closedWindow = $true
           } catch {}
         }
+
+        if (-not $closedWindow) {
+          $handle = [IntPtr]$window.Current.NativeWindowHandle
+          $closedWindow = [OrquestraWin32LoginNative]::CloseWindow($handle)
+        }
+
+        if ($closedWindow) { $closed++ }
       }
     }
-    Write-Result ([PSCustomObject]@{ closedWindows = $closed })
+
+    $terminatedOwnedProcess = $false
+    if ($ownedProcessId -gt 0) {
+      Start-Sleep -Milliseconds 500
+      $ownedProcess = Get-Process -Id $ownedProcessId -ErrorAction SilentlyContinue
+      if (
+        $null -ne $ownedProcess -and
+        $ownedProcess.ProcessName -match '(?i)^(AppController|gg-client|goglobal)$'
+      ) {
+        Stop-Process -Id $ownedProcessId -Force
+        $terminatedOwnedProcess = $true
+      }
+    }
+
+    Write-Result ([PSCustomObject]@{
+      closedWindows = $closed
+      terminatedOwnedProcess = $terminatedOwnedProcess
+    })
   }
 
   default {

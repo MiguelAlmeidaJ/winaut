@@ -72,6 +72,15 @@ class InspectFailureAfterLaunchDriver implements GoGlobalDesktopDriver {
     return Promise.resolve(this.state);
   }
 
+  useExistingClient(): void {
+    this.client = {
+      processId: 202,
+      processName: 'AppController',
+      title: 'GO-Global',
+    };
+    this.failNextInspect = true;
+  }
+
   authenticate(_username: string, _password: string): Promise<void> {
     return Promise.resolve();
   }
@@ -90,7 +99,7 @@ class InspectFailureAfterLaunchDriver implements GoGlobalDesktopDriver {
 }
 
 describe('GoGlobalWinThorSession transient state polling', () => {
-  it('retries a transient missing GO-Global window while connecting', async () => {
+  it('does not require UI inspection after an owned auto-launch', async () => {
     const driver = new InspectFailureAfterLaunchDriver(
       new Error(
         'App Controller operation "inspectState" failed: App Controller / GO-Global window was not found.',
@@ -109,10 +118,12 @@ describe('GoGlobalWinThorSession transient state polling', () => {
     ]);
   });
 
-  it('does not hide non-transient desktop inspection failures', async () => {
+  it('does not hide non-transient desktop inspection failures for existing sessions', async () => {
     const driver = new InspectFailureAfterLaunchDriver(
       new Error('UI Automation inspection failed.'),
     );
+    driver.useExistingClient();
+
     const session = new GoGlobalWinThorSession(profile, {
       driver,
       connectTimeoutMs: 50,

@@ -27,8 +27,12 @@ export interface GoGlobalDesktopDriver {
   ): Promise<void>;
   connectToHost(host: string): Promise<void>;
   inspectState(): Promise<GoGlobalDesktopInspection>;
-  authenticate(username: string, password: string): Promise<void>;
+  authenticate(
+    username: string,
+    password: string,
+    allowOpaqueFallback?: boolean,
+  ): Promise<void>;
   launchApplication(applicationName: string): Promise<void>;
   openRoutine(routineCode: number): Promise<void>;
-  closeSession(): Promise<void>;
+  closeSession(processId?: number | null): Promise<void>;
 }

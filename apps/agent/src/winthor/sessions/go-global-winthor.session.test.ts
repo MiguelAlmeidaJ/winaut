@@ -57,6 +57,8 @@ class FakeGoGlobalDriver implements GoGlobalDesktopDriver {
     windowTitle: 'AppController',
   };
   readonly actions: string[] = [];
+  readonly opaqueAuthenticationFallbacks: boolean[] = [];
+  readonly closedProcessIds: Array<number | null> = [];
   readonly inspections: GoGlobalDesktopInspection[] = [];
   private autoLaunchRequested = false;
 
@@ -106,8 +108,13 @@ class FakeGoGlobalDriver implements GoGlobalDesktopDriver {
     return Promise.resolve(this.inspections.shift() ?? this.state);
   }
 
-  authenticate(username: string, password: string): Promise<void> {
+  authenticate(
+    username: string,
+    password: string,
+    allowOpaqueFallback = false,
+  ): Promise<void> {
     this.actions.push(`authenticate:${username}:${password}`);
+    this.opaqueAuthenticationFallbacks.push(allowOpaqueFallback);
 
     if (this.autoLaunchRequested) {
       this.state = {
@@ -150,8 +157,9 @@ class FakeGoGlobalDriver implements GoGlobalDesktopDriver {
     return Promise.resolve();
   }
 
-  closeSession(): Promise<void> {
+  closeSession(processId?: number | null): Promise<void> {
     this.actions.push('closeSession');
+    this.closedProcessIds.push(processId ?? null);
     return Promise.resolve();
   }
 }
@@ -183,6 +191,8 @@ describe('GoGlobalWinThorSession', () => {
       'authenticate:ORQUESTRA:segredo',
       'closeSession',
     ]);
+    assert.deepEqual(driver.opaqueAuthenticationFallbacks, [true]);
+    assert.deepEqual(driver.closedProcessIds, [101]);
   });
 
   it('normalizes URL-style Host Address before connecting App Controller', async () => {

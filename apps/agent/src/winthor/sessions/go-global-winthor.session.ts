@@ -8,7 +8,6 @@ import { PowerShellWindowsCredentialSecretResolver } from '../credentials/powers
 import {
   GoGlobalDesktopState,
   type GoGlobalDesktopDriver,
-  type GoGlobalDesktopInspection,
 } from '../windows/go-global-desktop-driver.interface.js';
 import { PowerShellGoGlobalDesktopDriver } from '../windows/powershell-go-global-desktop.driver.js';
 import {
@@ -59,6 +58,7 @@ export class GoGlobalWinThorSession implements WinThorSession {
   private connected = false;
   private authenticated = false;
   private ownsClient = false;
+  private ownedClientProcessId: number | null = null;
   private applicationAutoLaunchRequested = false;
 
   constructor(
@@ -92,6 +92,7 @@ export class GoGlobalWinThorSession implements WinThorSession {
       this.ownsClient = true;
       this.applicationAutoLaunchRequested = true;
       client = await this.waitForClient();
+      this.ownedClientProcessId = client?.processId ?? null;
     }
 
     if (!client) {
@@ -99,24 +100,6 @@ export class GoGlobalWinThorSession implements WinThorSession {
     }
 
     if (this.applicationAutoLaunchRequested) {
-      const loginState = await this.waitForState(
-        [GoGlobalDesktopState.LOGIN_REQUIRED],
-        this.connectTimeoutMs,
-        'GO-Global auto-launch login',
-      );
-
-      if (
-        !loginState.windowTitle ||
-        !/^\s*TOTVS\s*Cloud\s*[-–—]\s*Linha\s*WinThor(?:\s.*)?$/i.test(
-          loginState.windowTitle,
-        )
-      ) {
-        throw new WinThorGoGlobalSessionStateError(
-          'connect with AppController auto-launch',
-          'the GO-Global login window "TOTVS Cloud - Linha Winthor"',
-        );
-      }
-
       this.connected = true;
       return;
     }
@@ -142,10 +125,31 @@ export class GoGlobalWinThorSession implements WinThorSession {
   async ensureAuthenticated(): Promise<void> {
     this.assertConnected('ensureAuthenticated');
 
+    if (this.applicationAutoLaunchRequested) {
+      const reference = this.profile?.secretReference?.trim();
+
+      if (!reference) {
+        throw new WinThorGoGlobalCredentialNotConfiguredError();
+      }
+
+      const credential = await this.credentialResolver.resolve(reference);
+      const username =
+        this.profile?.username?.trim() || credential.username?.trim();
+
+      if (!username) {
+        throw new WinThorGoGlobalCredentialNotConfiguredError();
+      }
+
+      await this.driver.authenticate(username, credential.secret, true);
+
+      throw new WinThorAuthenticationRequiredError(
+        'WinThor internal login after GO-Global auto-launch',
+      );
+    }
+
     let state = await this.driver.inspectState();
 
     if (state.state === GoGlobalDesktopState.LOGIN_REQUIRED) {
-      const loginWindowTitle = state.windowTitle;
       const reference = this.profile?.secretReference?.trim();
 
       if (!reference) {
@@ -161,24 +165,14 @@ export class GoGlobalWinThorSession implements WinThorSession {
       }
 
       await this.driver.authenticate(username, credential.secret);
-      if (this.applicationAutoLaunchRequested) {
-        state = await this.waitForGoGlobalLoginTransition(loginWindowTitle);
-
-        if (state.state === GoGlobalDesktopState.LOGIN_REQUIRED) {
-          throw new WinThorAuthenticationRequiredError(
-            state.windowTitle ?? 'WinThor internal login',
-          );
-        }
-      } else {
-        state = await this.waitForState(
-          [
-            GoGlobalDesktopState.APPLICATION_CATALOG,
-            GoGlobalDesktopState.WINTHOR_READY,
-          ],
-          this.connectTimeoutMs,
-          'GO-Global authentication',
-        );
-      }
+      state = await this.waitForState(
+        [
+          GoGlobalDesktopState.APPLICATION_CATALOG,
+          GoGlobalDesktopState.WINTHOR_READY,
+        ],
+        this.connectTimeoutMs,
+        'GO-Global authentication',
+      );
     }
 
     if (
@@ -191,46 +185,6 @@ export class GoGlobalWinThorSession implements WinThorSession {
     }
 
     this.authenticated = true;
-  }
-
-  private async waitForGoGlobalLoginTransition(
-    loginWindowTitle: string | null,
-  ): Promise<GoGlobalDesktopInspection> {
-    const deadline = Date.now() + this.connectTimeoutMs;
-
-    do {
-      let current: GoGlobalDesktopInspection | null = null;
-
-      try {
-        current = await this.driver.inspectState();
-      } catch (error) {
-        if (
-          !(
-            error instanceof Error &&
-            error.message.includes(
-              'App Controller / GO-Global window was not found.',
-            )
-          )
-        ) {
-          throw error;
-        }
-      }
-
-      if (
-        current !== null &&
-        current.state === GoGlobalDesktopState.LOGIN_REQUIRED &&
-        current.windowTitle !== loginWindowTitle
-      ) {
-        return current;
-      }
-
-      await sleep(this.pollIntervalMs);
-    } while (Date.now() < deadline);
-
-    throw new WinThorGoGlobalSessionStateError(
-      'complete GO-Global authentication',
-      'the GO-Global login window to transition to the published WinThor application',
-    );
   }
 
   async openRoutine(routineCode: number): Promise<void> {
@@ -279,12 +233,13 @@ export class GoGlobalWinThorSession implements WinThorSession {
   async disconnect(): Promise<void> {
     try {
       if (this.ownsClient) {
-        await this.driver.closeSession();
+        await this.driver.closeSession(this.ownedClientProcessId);
       }
     } finally {
       this.connected = false;
       this.authenticated = false;
       this.ownsClient = false;
+      this.ownedClientProcessId = null;
       this.applicationAutoLaunchRequested = false;
     }
   }
